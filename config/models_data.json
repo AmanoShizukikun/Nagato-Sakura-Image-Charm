@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2025-04-16",
+  "models": {
+    "NS-IC-Kyouka": {
+      "name": "Kyouka -《鏡花・碎象還映》",
+      "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/download/model-space/NS-IC-Kyouka-v6-314.pth",
+      "description": "碎裂之象，在鏡中重構原初之姿。鏡中之花非虛幻，碎裂之象皆可還映。",
+      "details": "泛用動畫 JPEG 壓縮錯色與鋸齒修復還原模型。融合細節還原與邊緣柔化，用以還映碎裂之象。\n\n- 版本：v6.31\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：動畫圖、二次元插圖的壓縮錯色與鋸齒修復",
+      "preview": "assets/model_previews/Kyouka.png",
+      "category": "動畫",
+      "added_date": "2025-04-16",
+      "author": "天野靜樹"
+    },
+    "NS-IC-Kyouka-LQ": {
+      "name": "Kyouka-LQ -《鏡花・幽映深層》",
+      "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/download/model-space/NS-IC-Kyouka-LQ-v6-310.pth",
+      "details": "低畫質特化動畫圖像還原。針對重度 JPEG 壓縮錯色、鋸齒塊狀與細節遺失進行修復與視覺補全。\n\n- 版本：v6.31\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：低畫質動畫修復、低畫質二次元插圖、低分辨素材強化",
+      "description": "深層碎象，綻映破碎中的微光輪廓。在低質的殘影中，亦能尋回幻境之原貌。",
+      "preview": "assets/model_previews/Kyouka-LQ.png",
+      "category": "動畫",
+      "added_date": "2025-04-15",
+      "author": "天野靜樹"
+    }
+  },
+  "categories": [
+    "動畫",
+    "寫實"
+  ],
+  "remote_update_url": "https://raw.githubusercontent.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/main/config/models_data.json"
+}
