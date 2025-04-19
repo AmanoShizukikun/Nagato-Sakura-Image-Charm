@@ -1,0 +1,14 @@
+PyQt6
+numpy
+opencv-python
+Pillow
+scikit-image
+tqdm
+requests
+rarfile
+py7zr
+matplotlib
+ffmpeg-python
+tensorboard
+pandas
+scikit-learn
