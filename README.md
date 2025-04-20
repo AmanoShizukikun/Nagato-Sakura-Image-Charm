@@ -29,6 +29,7 @@
 - 【錯誤】在沒有模型時下載模型切換模型會顯示錯誤，需要手動重新切模型。 (1.0.1 已修正)
 - 【錯誤】刪除模型頁面模型大小顯示錯誤。 (1.0.1 已修正)
 - 【錯誤】影像評估核心尚未完成，導致評估錯誤。
+- 【錯誤】由於使用混合精度(AMP)要使用到 Tensor 核心所以使用非 RTX 的顯卡(如 GTX 16、10...等)會出現模型錯誤輸出黑畫面的問題。
 
 [所有發行版本](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/docs/Changelog.md)
 
