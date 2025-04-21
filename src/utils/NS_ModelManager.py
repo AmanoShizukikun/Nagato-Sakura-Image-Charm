@@ -12,7 +12,6 @@ from src.models.NS_ImageEnhancer import ImageQualityEnhancer
 from src.utils.NS_DownloadManager import DownloadManager
 from src.utils.NS_ExtractUtility import ExtractUtility 
 
-
 logger = logging.getLogger(__name__)
 
 class ModelManager(QObject):
@@ -26,7 +25,7 @@ class ModelManager(QObject):
     model_downloaded_signal = pyqtSignal(str)
     download_progress_signal = pyqtSignal(int, int, float)
     download_finished_signal = pyqtSignal(bool, str)
-    download_retry_signal = pyqtSignal(str) 
+    download_retry_signal = pyqtSignal(str)
     
     def __init__(self):
         """初始化模型管理器"""
@@ -52,7 +51,7 @@ class ModelManager(QObject):
         self.max_cache_size = 2
         self.downloader = None
         self.download_thread = None
-        self.current_download_info = None 
+        self.current_download_info = None
         self.observers = []
         self.scan_models_directory()
             
@@ -105,7 +104,7 @@ class ModelManager(QObject):
     def _create_default_models_file(self):
         """創建默認的模型數據文件"""
         default_data = {
-            "version": "1.0.0",
+            "version": "1.0.1",
             "last_updated": datetime.now().strftime("%Y-%m-%d"),
             "models": {
                 "NS-IC-Kyouka": {
@@ -121,18 +120,28 @@ class ModelManager(QObject):
                 "NS-IC-Kyouka-LQ": {
                     "name": "Kyouka-LQ -《鏡花・幽映深層》",
                     "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/download/model-space/NS-IC-Kyouka-LQ-v6-310.pth",
-                    "details": "低畫質特化動畫圖像還原。針對重度 JPEG 壓縮錯色、鋸齒塊狀與細節遺失進行修復與視覺補全。\n\n- 版本：v6.31\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：低畫質動畫修復、低畫質二次元插圖、低分辨素材強化",
                     "description": "深層碎象，綻映破碎中的微光輪廓。在低質的殘影中，亦能尋回幻境之原貌。",
+                    "details": "低畫質特化動畫圖像還原。針對重度 JPEG 壓縮錯色、鋸齒塊狀與細節遺失進行修復與視覺補全。\n\n- 版本：v6.31\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：低畫質動畫修復、低畫質二次元插圖、低分辨素材強化",
                     "preview": "assets/model_previews/Kyouka-LQ.png",
                     "category": "動畫",
                     "added_date": "2025-04-15",
+                    "author": "天野靜樹"
+                },
+                "NS-IC-Kyouka-MQ": {
+                    "name": "Kyouka-MQ -《鏡花・霞緲輪影》",
+                    "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/download/model-space/NS-IC-Kyouka-MQ-v7-349.pth",
+                    "description": "層層視象，於半碎鏡花中映現原生構圖。非極損畫面，亦可升華細節與色彩。",
+                    "details": "適用於中等畫質動畫圖像的細節提升與重構。在保留原圖氛圍的基礎，加強清晰度。\n\n- 版本：v7.34\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：一般畫質動漫圖像、漫畫掃圖強化、插圖分享畫質提升",
+                    "preview": "assets/model_previews/Kyouka-MQ.png",
+                    "category": "動畫",
+                    "added_date": "2025-04-21",
                     "author": "天野靜樹"
                 }
             },
             "categories": ["動畫","寫實"],
             "remote_update_url": "https://raw.githubusercontent.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/main/config/models_data.json"
         }
-        
+          
         os.makedirs(os.path.dirname(self.models_file), exist_ok=True)
         with open(self.models_file, 'w', encoding='utf-8') as f:
             json.dump(default_data, f, ensure_ascii=False, indent=2)
@@ -149,13 +158,13 @@ class ModelManager(QObject):
     
     def get_version(self):
         """獲取模型數據版本"""
-        return self.models_data.get('version', '0.0.1')
+        return self.models_data.get('version', '1.0.0')
     
     def get_last_updated(self):
         """獲取模型數據最後更新時間"""
         return self.models_data.get('last_updated', datetime.now().strftime("%Y-%m-%d"))
     
-    # ========== 模型更新功能 ==========
+    # ========== 模型更新 ==========
     
     def check_for_updates(self):
         """檢查是否有模型數據更新"""
@@ -164,13 +173,12 @@ class ModelManager(QObject):
             remote_url = self.models_data.get('remote_update_url', '')
             if not remote_url:
                 self.update_available_signal.emit(False, "未設定更新連結")
-                return False
+                return False 
             response = requests.get(remote_url, timeout=10)
             if response.status_code == 200:
                 remote_data = response.json()
                 remote_version = remote_data.get('version', '0.0.0')
                 local_version = self.get_version()
-                
                 if self._compare_versions(remote_version, local_version) > 0:
                     self.update_available_signal.emit(True, f"有可用更新: {local_version} → {remote_version}")
                     return True
@@ -179,8 +187,7 @@ class ModelManager(QObject):
                     return False
             else:
                 self.update_available_signal.emit(False, f"檢查更新失敗: HTTP {response.status_code}")
-                return False
-                
+                return False 
         except Exception as e:
             self.update_available_signal.emit(False, f"檢查更新失敗: {str(e)}")
             return False
@@ -210,7 +217,6 @@ class ModelManager(QObject):
             if not remote_url:
                 self.update_finished_signal.emit(False, "未設定更新連結")
                 return False
-                 
             response = requests.get(remote_url, timeout=10)
             if response.status_code == 200:
                 remote_data = response.json()
@@ -222,12 +228,11 @@ class ModelManager(QObject):
             else:
                 self.update_finished_signal.emit(False, f"下載更新失敗: HTTP {response.status_code}")
                 return False
-                
         except Exception as e:
             self.update_finished_signal.emit(False, f"更新失敗: {str(e)}")
             return False
     
-    # ========== 模型下載功能 ==========
+    # ========== 模型下載 ==========
     
     def download_model_from_url(self, url, save_path=None, num_threads=4, retry_count=3, auto_extract=True):
         """使用下載器下載模型"""
@@ -376,12 +381,10 @@ class ModelManager(QObject):
         try:
             self.available_models = []
             self.model_info = {}
-            
             if not os.path.exists(self.models_dir):
                 os.makedirs(self.models_dir, exist_ok=True)
                 logger.info(f"創建模型目錄: {self.models_dir}")
                 return
-            
             for root, _, files in os.walk(self.models_dir):
                 for file in files:
                     if file.endswith(('.pth', '.pt', '.ckpt', '.safetensors')):
@@ -471,7 +474,6 @@ class ModelManager(QObject):
                     logger.error(f"模型文件不存在: {model_path}")
                     return False
                 self.available_models.append(model_path)
-            
             self.registered_model_path = model_path
             for path in self.model_statuses:
                 self.model_statuses[path] = "available"
@@ -486,7 +488,6 @@ class ModelManager(QObject):
         if not self.registered_model_path:
             logger.warning("沒有註冊的模型，無法準備推理")
             return False
-            
         model_path = self.registered_model_path
         try:
             if model_path in self.model_cache:
@@ -551,7 +552,7 @@ class ModelManager(QObject):
             logger.error(f"清空模型快取時出錯: {str(e)}")
             return False
     
-    # ========== 模型匯入與刪除功能 ==========
+    # ========== 模型匯入與刪除 ==========
     
     def import_external_model(self, source_path):
         """匯入外部模型到models目錄，但不載入模型"""

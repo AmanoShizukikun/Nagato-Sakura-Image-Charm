@@ -1,8 +1,11 @@
+import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class RRDB(nn.Module):
+    """殘差密集區塊，用於提取特徵並保留細節"""
     def __init__(self, in_channels, growth_channels=32):
         super(RRDB, self).__init__()
         self.dense1 = nn.Sequential(
@@ -31,7 +34,9 @@ class RRDB(nn.Module):
         out = self.final_conv(out)
         return self.lrelu(residual + out * 0.2)
 
+
 class AttentionBlock(nn.Module):
+    """自注意力機制模塊，強化模型對圖像重要區域的關注"""
     def __init__(self, channels):
         super(AttentionBlock, self).__init__()
         self.query = nn.Conv2d(channels, channels // 8, kernel_size=1)
@@ -52,8 +57,17 @@ class AttentionBlock(nn.Module):
         out = self.gamma * out + x
         return out
 
+
 class ImageQualityEnhancer(nn.Module):
-    def __init__(self, num_rrdb_blocks=16, features=64):
+    """圖像品質增強模型，結合殘差密集區塊和注意力機制，提升圖像品質"""
+    def __init__(self, num_rrdb_blocks=16, features=64, model_path=None, device=None):
+        """初始化圖像品質增強器
+        參數:
+            num_rrdb_blocks: RRDB 區塊數量
+            features: 基礎特徵通道數
+            model_path: 預訓練模型路徑，如果提供則自動載入權重
+            device: 計算裝置 (cuda/cpu)
+        """
         super(ImageQualityEnhancer, self).__init__()
         self.conv_first = nn.Conv2d(3, features, kernel_size=3, stride=1, padding=1)
         self.encoder = nn.Sequential(
@@ -87,6 +101,12 @@ class ImageQualityEnhancer(nn.Module):
             nn.Sigmoid()
         )
 
+        if model_path and os.path.exists(model_path):
+            self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.load_state_dict(torch.load(model_path, map_location=self.device))
+            self.to(self.device)
+            self.eval()
+
     def forward(self, x):
         initial_features = self.conv_first(x)
         encoder_out = self.encoder(initial_features)
@@ -97,3 +117,42 @@ class ImageQualityEnhancer(nn.Module):
         upsampled = self.upsample(attention_out)
         out = self.final_conv(upsampled)
         return out
+
+
+class MultiScaleDiscriminator(nn.Module):
+    """多尺度判別器，用於訓練過程中從不同尺度評估圖像真實度"""
+    def __init__(self, num_scales=3, input_channels=3):
+        super(MultiScaleDiscriminator, self).__init__()
+        self.num_scales = num_scales
+        self.discriminators = nn.ModuleList()
+        
+        for _ in range(num_scales):
+            self.discriminators.append(self._create_discriminator(input_channels))
+            
+    def _create_discriminator(self, input_channels):
+        return nn.Sequential(
+            nn.Conv2d(input_channels, 64, kernel_size=4, stride=2, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),
+            nn.BatchNorm2d(256),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            nn.Conv2d(256, 512, kernel_size=4, stride=1, padding=1),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2, inplace=True),
+            
+            nn.Conv2d(512, 1, kernel_size=4, stride=1, padding=1),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, x):
+        outputs = []
+        for discriminator in self.discriminators:
+            outputs.append(discriminator(x))
+            x = F.avg_pool2d(x, kernel_size=2)
+        return outputs

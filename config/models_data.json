@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "last_updated": "2025-04-16",
+  "version": "1.0.1",
+  "last_updated": "2025-04-22",
   "models": {
     "NS-IC-Kyouka": {
       "name": "Kyouka -《鏡花・碎象還映》",
@@ -15,11 +15,21 @@
     "NS-IC-Kyouka-LQ": {
       "name": "Kyouka-LQ -《鏡花・幽映深層》",
       "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/download/model-space/NS-IC-Kyouka-LQ-v6-310.pth",
-      "details": "低畫質特化動畫圖像還原。針對重度 JPEG 壓縮錯色、鋸齒塊狀與細節遺失進行修復與視覺補全。\n\n- 版本：v6.31\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：低畫質動畫修復、低畫質二次元插圖、低分辨素材強化",
       "description": "深層碎象，綻映破碎中的微光輪廓。在低質的殘影中，亦能尋回幻境之原貌。",
+      "details": "低畫質特化動畫圖像還原。針對重度 JPEG 壓縮錯色、鋸齒塊狀與細節遺失進行修復與視覺補全。\n\n- 版本：v6.31\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：低畫質動畫修復、低畫質二次元插圖、低分辨素材強化",
       "preview": "assets/model_previews/Kyouka-LQ.png",
       "category": "動畫",
       "added_date": "2025-04-15",
+      "author": "天野靜樹"
+    },
+    "NS-IC-Kyouka-MQ": {
+      "name": "Kyouka-MQ -《鏡花・霞緲輪影》",
+      "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/download/model-space/NS-IC-Kyouka-MQ-v7-349.pth",
+      "description": "層層視象，於半碎鏡花中映現原生構圖。非極損畫面，亦可升華細節與色彩。",
+      "details": "適用於中等畫質動畫圖像的細節提升與重構。在保留原圖氛圍的基礎，加強清晰度。\n\n- 版本：v7.34\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：一般畫質動漫圖像、漫畫掃圖強化、插圖分享畫質提升",
+      "preview": "assets/model_previews/Kyouka-MQ.png",
+      "category": "動畫",
+      "added_date": "2025-04-21",
       "author": "天野靜樹"
     }
   },

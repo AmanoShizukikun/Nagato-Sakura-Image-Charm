@@ -12,7 +12,6 @@ from src.processing.NS_DataProcessor import DataProcessor
 from src.training.NS_Trainer import Trainer
 
 
-# 訓練工作執行緒
 class TrainingWorker(QThread):
     progress_updated = pyqtSignal(int, int, int, float, float)
     epoch_completed = pyqtSignal(int, float, float, float)
@@ -56,7 +55,6 @@ class TrainingWorker(QThread):
         """中止訓練"""
         self.is_running = False
 
-# 資料處理工作執行緒
 class DataProcessingWorker(QThread):
     progress_updated = pyqtSignal(int, int)
     processing_completed = pyqtSignal(int)
@@ -83,7 +81,6 @@ class DataProcessingWorker(QThread):
     def update_progress(self, current, total):
         self.progress_updated.emit(current, total)
 
-
 class TrainingTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -94,18 +91,11 @@ class TrainingTab(QWidget):
     def init_ui(self):
         """初始化使用者介面"""
         main_layout = QVBoxLayout()
-        
-        # 建立標籤頁容器
         tab_widget = QTabWidget()
-        
-        # 資料處理標籤頁
         data_tab = self.create_data_processing_tab()
         tab_widget.addTab(data_tab, "資料處理")
-        
-        # 模型訓練標籤頁
         training_tab = self.create_model_training_tab()
         tab_widget.addTab(training_tab, "模型訓練")
-        
         main_layout.addWidget(tab_widget)
         self.setLayout(main_layout)
         
@@ -113,12 +103,8 @@ class TrainingTab(QWidget):
         """建立資料處理標籤頁"""
         tab = QWidget()
         layout = QVBoxLayout()
-        
-        # 資料處理設定區塊
         settings_group = QGroupBox("資料處理設定")
         form_layout = QFormLayout()
-        
-        # 輸入目錄 - 預設為 /data/input_images
         input_layout = QHBoxLayout()
         self.input_dir_edit = QLineEdit("/data/input_images")
         self.browse_input_btn = QPushButton("瀏覽...")
@@ -126,8 +112,6 @@ class TrainingTab(QWidget):
         input_layout.addWidget(self.input_dir_edit)
         input_layout.addWidget(self.browse_input_btn)
         form_layout.addRow("輸入目錄:", input_layout)
-        
-        # 輸出目錄
         output_layout = QHBoxLayout()
         self.output_dir_edit = QLineEdit()
         self.output_dir_edit.setPlaceholderText("請選擇輸出目錄...")
@@ -137,8 +121,6 @@ class TrainingTab(QWidget):
         output_layout.addWidget(self.output_dir_edit)
         output_layout.addWidget(self.browse_output_btn)
         form_layout.addRow("輸出目錄:", output_layout)
-        
-        # 品質設定
         quality_layout = QHBoxLayout()
         self.min_quality_spin = QSpinBox()
         self.min_quality_spin.setRange(1, 100)
@@ -158,8 +140,6 @@ class TrainingTab(QWidget):
         form_layout.addRow("品質範圍:", quality_layout)
         settings_group.setLayout(form_layout)
         layout.addWidget(settings_group)
-        
-        # 處理進度
         progress_group = QGroupBox("處理進度")
         progress_layout = QVBoxLayout()
         self.data_progress_bar = QProgressBar()
@@ -176,8 +156,6 @@ class TrainingTab(QWidget):
         progress_layout.addLayout(progress_status_layout)
         progress_group.setLayout(progress_layout)
         layout.addWidget(progress_group)
-        
-        # 處理按鈕
         button_layout = QHBoxLayout()
         self.start_processing_btn = QPushButton("開始處理")
         self.start_processing_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
@@ -193,12 +171,8 @@ class TrainingTab(QWidget):
         """建立模型訓練標籤頁"""
         tab = QWidget()
         layout = QVBoxLayout()
-        
-        # 訓練設定區塊
         settings_group = QGroupBox("訓練設定")
         form_layout = QFormLayout()
-        
-        # 資料集目錄
         dataset_layout = QHBoxLayout()
         self.dataset_dir_edit = QLineEdit()
         self.dataset_dir_edit.setReadOnly(True)
@@ -207,8 +181,6 @@ class TrainingTab(QWidget):
         dataset_layout.addWidget(self.dataset_dir_edit)
         dataset_layout.addWidget(self.browse_dataset_btn)
         form_layout.addRow("資料集目錄:", dataset_layout)
-        
-        # 模型保存目錄
         model_dir_layout = QHBoxLayout()
         self.model_dir_edit = QLineEdit("./models")
         self.browse_model_dir_btn = QPushButton("瀏覽...")
@@ -216,11 +188,7 @@ class TrainingTab(QWidget):
         model_dir_layout.addWidget(self.model_dir_edit)
         model_dir_layout.addWidget(self.browse_model_dir_btn)
         form_layout.addRow("模型儲存目錄:", model_dir_layout)
-        
-        # 模型保存選項
         save_options_layout = QVBoxLayout()
-        
-        # 添加模型保存選擇
         self.save_best_loss_cb = QCheckBox("保存最佳損失模型")
         self.save_best_loss_cb.setChecked(True)
         self.save_best_psnr_cb = QCheckBox("保存最佳PSNR模型")
@@ -228,8 +196,6 @@ class TrainingTab(QWidget):
         self.save_final_cb = QCheckBox("保存最終模型")
         self.save_final_cb.setChecked(True)
         self.save_checkpoint_cb = QCheckBox("保存週期檢查點")
-        
-        # 檢查點週期設定
         checkpoint_layout = QHBoxLayout()
         self.checkpoint_interval_spin = QSpinBox()
         self.checkpoint_interval_spin.setRange(1, 100)
@@ -239,8 +205,6 @@ class TrainingTab(QWidget):
         checkpoint_layout.addWidget(self.checkpoint_interval_spin)
         checkpoint_layout.addWidget(QLabel("個週期保存一次"))
         checkpoint_layout.addStretch()
-        
-        # 連接檢查點選項與間隔選擇器的狀態
         self.save_checkpoint_cb.toggled.connect(self.checkpoint_interval_spin.setEnabled)
         save_options_layout.addWidget(self.save_best_loss_cb)
         save_options_layout.addWidget(self.save_best_psnr_cb)
@@ -248,38 +212,28 @@ class TrainingTab(QWidget):
         save_options_layout.addWidget(self.save_checkpoint_cb)
         save_options_layout.addLayout(checkpoint_layout)
         form_layout.addRow("模型保存選項:", save_options_layout)
-        
-        # 批次大小
         self.batch_size_spin = QSpinBox()
         self.batch_size_spin.setRange(1, 32)
         self.batch_size_spin.setValue(8)
         form_layout.addRow("批次大小:", self.batch_size_spin)
-        
-        # 學習率
         self.learning_rate_spin = QDoubleSpinBox()
         self.learning_rate_spin.setRange(0.000001, 0.01)
         self.learning_rate_spin.setValue(0.0001)
         self.learning_rate_spin.setDecimals(6)
         self.learning_rate_spin.setSingleStep(0.0001)
         form_layout.addRow("學習率:", self.learning_rate_spin)
-        
-        # 訓練週期
         self.num_epochs_spin = QSpinBox()
         self.num_epochs_spin.setRange(1, 1000)
         self.num_epochs_spin.setValue(50)
         form_layout.addRow("訓練週期:", self.num_epochs_spin)
         settings_group.setLayout(form_layout)
         layout.addWidget(settings_group)
-        
-        # 訓練進度
         progress_group = QGroupBox("訓練進度")
         progress_layout = QVBoxLayout()
         self.epoch_progress_bar = QProgressBar()
         self.epoch_progress_bar.setRange(0, 100)
         self.batch_progress_bar = QProgressBar()
         self.batch_progress_bar.setRange(0, 100)
-        
-        # 添加預計完成時間標籤
         self.eta_label = QLabel("預計完成時間: --")
         self.training_log = QTextEdit()
         self.training_log.setReadOnly(True)
@@ -292,13 +246,9 @@ class TrainingTab(QWidget):
         progress_layout.addWidget(self.training_log)
         progress_group.setLayout(progress_layout)
         layout.addWidget(progress_group)
-        
-        # 訓練按鈕
         button_layout = QHBoxLayout()
         self.start_training_btn = QPushButton("開始訓練")
         self.start_training_btn.clicked.connect(self.start_model_training)
-        
-        # 中止按鈕
         self.stop_training_btn = QPushButton("中止訓練")
         self.stop_training_btn.clicked.connect(self.stop_model_training)
         self.stop_training_btn.setEnabled(False)
@@ -342,6 +292,7 @@ class TrainingTab(QWidget):
         if not input_dir or not output_dir:
             self.data_status_label.setText("請選擇輸入和輸出目錄")
             return
+            
         if not os.path.exists(input_dir):
             self.data_status_label.setText(f"輸入目錄不存在: {input_dir}")
             return

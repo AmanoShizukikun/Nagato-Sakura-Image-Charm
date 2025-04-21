@@ -14,8 +14,8 @@ class DownloadManager(QObject):
         super().__init__()
         self.threads = []
         self.is_downloading = False
-        self.cancel_requested = False 
-        self.current_file_path = None  
+        self.cancel_requested = False
+        self.current_file_path = None
     
     def cancel_download(self):
         """中止當前下載並刪除部分下載的文件"""
@@ -27,7 +27,6 @@ class DownloadManager(QObject):
     def download_file(self, url, filename=None, retry_count=3, retry_delay=5, num_threads=1):
         """
         從指定URL下載檔案並發出進度信號
-        
         Args:
             url: 下載檔案的URL
             filename: 儲存的檔案名稱，若未指定則從URL取得
@@ -38,8 +37,8 @@ class DownloadManager(QObject):
         if filename is None:
             filename = url.split("/")[-1]
         os.makedirs(os.path.dirname(filename), exist_ok=True)
-        self.cancel_requested = False
-        self.current_file_path = filename
+        self.cancel_requested = False 
+        self.current_file_path = filename 
         attempts = 0
         while attempts < retry_count:
             try:
@@ -53,7 +52,7 @@ class DownloadManager(QObject):
                 progress_lock = threading.Lock()
                 start_time = time.time()
                 self.is_downloading = True
-                self.threads = []
+                self.threads = [] 
                 def download_chunk(start, end, thread_index):
                     nonlocal downloaded_size
                     headers = {"Range": f"bytes={start}-{end}"}
@@ -120,10 +119,10 @@ class DownloadManager(QObject):
             downloaded_size = 0
             start_time = time.time()
             self.is_downloading = True
-            self.current_file_path = filename 
+            self.current_file_path = filename
             with open(filename, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
-                    if self.cancel_requested:
+                    if self.cancel_requested: 
                         self.is_downloading = False
                         f.close()
                         self._delete_incomplete_file(filename)

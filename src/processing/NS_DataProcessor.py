@@ -12,17 +12,13 @@ class DataProcessor:
         self.logger = logging.getLogger("DataProcessor")
     
     def process_images(self, input_dir, output_dir, callback=None):
-        """處理圖片集合，轉換為多種品質等級的訓練資料集
-        Args:
-            input_dir: 輸入圖片目錄
-            output_dir: 輸出目錄
-            callback: 進度回呼函式，接收(當前進度, 總數量)參數
-        """
+        """處理圖片集合，轉換為多種品質等級的訓練資料集"""
         quality_levels = list(range(self.min_quality, self.max_quality, self.quality_interval))
         os.makedirs(output_dir, exist_ok=True)
         image_files = [f for f in os.listdir(input_dir) if f.lower().endswith(('jpg', 'jpeg', 'png'))]
         total_files = len(image_files)
         processed_files = 0
+        
         with ThreadPoolExecutor() as executor:
             futures = []
             for file_name in image_files:
@@ -34,11 +30,13 @@ class DataProcessor:
                     quality_levels
                 )
                 futures.append(future)
+            
             for future in futures:
                 future.result()
                 processed_files += 1
                 if callback:
-                    callback(processed_files, total_files)        
+                    callback(processed_files, total_files)
+                    
         self.logger.info(f"已完成處理 {processed_files} 張圖片")
         return processed_files
 

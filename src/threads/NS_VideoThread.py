@@ -7,12 +7,13 @@ import threading
 import gc
 import re
 import subprocess
+import numpy as np
+import torch
 from PIL import Image
 from PyQt6.QtCore import QThread, pyqtSignal
 import logging
 
 from src.processing.NS_PatchProcessor import process_image_in_patches
-
 
 logger = logging.getLogger(__name__)
 
@@ -21,26 +22,10 @@ class VideoEnhancerThread(QThread):
     progress_signal = pyqtSignal(int, int, str)  # 進度信號：目前進度、總進度、狀態訊息
     finished_signal = pyqtSignal(str, float)     # 完成信號：輸出檔案路徑、耗時
     preview_signal = pyqtSignal(object, int)     # 預覽信號：增強後的幀、幀索引
-    
+
     def __init__(self, model, input_path, output_path, device, block_size, overlap, 
                 use_weight_mask, blending_mode, frame_step=1, preview_interval=1, keep_audio=True,
-                sync_preview=True, video_options=None):
-        """初始化影片增強執行緒
-        Args:
-            model: 增強模型
-            input_path: 輸入影片路徑
-            output_path: 輸出影片路徑
-            device: 處理裝置 (cpu/cuda)
-            block_size: 分塊大小
-            overlap: 重疊區域大小
-            use_weight_mask: 是否使用權重遮罩
-            blending_mode: 混合模式
-            frame_step: 處理每幾幀 (跳幀處理)
-            preview_interval: 預覽間隔 (秒)，預設為1秒
-            keep_audio: 是否保留音軌
-            sync_preview: 是否同步預覽
-            video_options: 影片輸出選項字典
-        """
+                sync_preview=True, video_options=None, strength=1.0):
         super().__init__()
         self.model = model
         self.input_path = input_path
@@ -55,6 +40,7 @@ class VideoEnhancerThread(QThread):
         self.keep_audio = keep_audio
         self.sync_preview = sync_preview
         self.video_options = video_options or {}
+        self.strength = strength
         self.stop_flag = threading.Event()
         self.cap = None
         self.out = None
@@ -62,9 +48,70 @@ class VideoEnhancerThread(QThread):
         self.current_preview_frame = None
         self.ffmpeg_process = None
         self.high_frequency_preview = self.video_options.get('high_freq_preview', True)
+        self.use_amp = self.video_options.get('use_amp', None)
+        if self.use_amp is None:
+            self.use_amp = self._should_use_amp(device)
+        if device.type == 'cuda':
+            gpu_name = torch.cuda.get_device_name(device)
+            logger.info(f"使用GPU: {gpu_name}")
+            logger.info(f"CUDA版本: {torch.version.cuda}")
+            logger.info(f"混合精度計算: {'啟用' if self.use_amp else '禁用'}")
+            if self.use_amp:
+                logger.info("使用自動混合精度計算模式 (自動偵測結果)")
+            else:
+                logger.info("使用標準精度計算模式 (自動偵測結果)")
+
+    def _should_use_amp(self, device):
+        if device.type != 'cuda':
+            return False
+        gpu_name = torch.cuda.get_device_name(device)
+        logger.info(f"正在檢測GPU '{gpu_name}' 是否適合使用混合精度...")
+        try:
+            cuda_version = torch.version.cuda
+            if cuda_version:
+                cuda_major = int(cuda_version.split('.')[0])
+                logger.info(f"CUDA主要版本: {cuda_major}")
+                if cuda_major < 10:
+                    logger.info("CUDA版本低於10.0，禁用混合精度計算")
+                    return False
+        except Exception as e:
+            logger.warning(f"無法獲取CUDA版本信息: {e}")
+        excluded_gpus = ['1650', '1660', 'MX', 'P4', 'P40', 'K80', 'M4']
+        for model in excluded_gpus:
+            if model in gpu_name:
+                logger.info(f"檢測到GPU型號 {model} 在排除列表中，禁用混合精度")
+                return False
+        amp_supported_gpus = ['RTX', 'A100', 'A10', 'V100', 'T4', '30', '40', 'TITAN V']
+        for model in amp_supported_gpus:
+            if model in gpu_name:
+                logger.info(f"檢測到GPU型號 {model} 支持混合精度計算")
+                return True
+        cc_match = re.search(r'compute capability: (\d+)\.(\d+)', gpu_name.lower())
+        if cc_match:
+            major = int(cc_match.group(1))
+            minor = int(cc_match.group(2))
+            compute_capability = float(f"{major}.{minor}")
+            logger.info(f"GPU計算能力: {compute_capability}")
+            if compute_capability >= 7.0:
+                logger.info(f"GPU計算能力 {compute_capability} >= 7.0，啟用混合精度")
+                return True
+        try:
+            test_tensor = torch.randn(1, 3, 64, 64, device=device, dtype=torch.float32)
+            with torch.no_grad():
+                try:
+                    with torch.amp.autocast(device_type='cuda'):
+                        _ = self.model(test_tensor)
+                    logger.info("混合精度測試成功，啟用混合精度計算")
+                    return True
+                except Exception as e:
+                    logger.warning(f"混合精度測試失敗: {e}")
+                    return False
+        except Exception as e:
+            logger.warning(f"混合精度功能測試出錯: {e}")
+        logger.info("無法確定GPU是否支持混合精度，為安全起見禁用")
+        return False
 
     def stop(self):
-        """停止處理並釋放資源"""
         logger.info("正在停止影片處理...")
         self.stop_flag.set()
         if self.ffmpeg_process:
@@ -80,9 +127,8 @@ class VideoEnhancerThread(QThread):
             self.current_preview_frame = None
         gc.collect()
         logger.info("已釋放所有資源")
-    
+
     def safe_release_capture(self):
-        """安全釋放視頻捕獲資源"""
         if hasattr(self, 'cap') and self.cap is not None:
             try:
                 self.cap.release()
@@ -90,9 +136,8 @@ class VideoEnhancerThread(QThread):
             except Exception as e:
                 logger.error(f"釋放視頻捕獲資源時出錯: {str(e)}")
             self.cap = None
-    
+
     def safe_release_writer(self):
-        """安全釋放視頻寫入資源"""
         if hasattr(self, 'out') and self.out is not None:
             try:
                 self.out.release()
@@ -100,9 +145,8 @@ class VideoEnhancerThread(QThread):
             except Exception as e:
                 logger.error(f"釋放視頻寫入資源時出錯: {str(e)}")
             self.out = None
-    
+
     def safe_remove_temp_dir(self):
-        """安全刪除臨時目錄"""
         if self.temp_dir and os.path.exists(self.temp_dir):
             try:
                 time.sleep(0.5)
@@ -112,9 +156,8 @@ class VideoEnhancerThread(QThread):
                     logger.warning(f"無法完全刪除臨時目錄: {self.temp_dir}")
             except Exception as e:
                 logger.error(f"刪除臨時目錄時出錯: {str(e)}")
-    
+
     def check_ffmpeg_installed(self):
-        """檢查系統是否安裝了FFmpeg"""
         try:
             result = subprocess.run(['ffmpeg', '-version'], 
                                    stdout=subprocess.PIPE, 
@@ -123,15 +166,13 @@ class VideoEnhancerThread(QThread):
             return result.returncode == 0
         except Exception:
             return False
-    
+
     def run(self):
-        """執行影片處理主程序"""
         try:
             if not self.check_ffmpeg_installed():
                 self.progress_signal.emit(0, 100, "錯誤：未找到FFmpeg。請安裝FFmpeg並確保它在系統路徑中。")
                 logger.error("未找到FFmpeg，無法繼續處理")
                 return
-                
             start_time = time.time()
             self.temp_dir = tempfile.mkdtemp(prefix="ns_video_")
             input_frames_dir = os.path.join(self.temp_dir, "input_frames")
@@ -147,29 +188,24 @@ class VideoEnhancerThread(QThread):
             orig_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
             width, height = orig_width, orig_height
-            resolution = self.video_options.get('resolution', '原始分辨率')
-            if resolution == '720p':
-                height = 720
-                width = int(orig_width * (720 / orig_height))
-            elif resolution == '1080p':
-                height = 1080
-                width = int(orig_width * (1080 / orig_height))
-            elif resolution == '1440p':
-                height = 1440
-                width = int(orig_width * (1440 / orig_height))
-            elif resolution == '4K':
-                height = 2160
-                width = int(orig_width * (2160 / orig_height))
+            resolution = self.video_options.get('resolution', '原始大小')
+            scale_factor = float(self.video_options.get('scale_factor', 1.0))
+            custom_width = self.video_options.get('custom_width')
+            custom_height = self.video_options.get('custom_height')
+            if resolution == '原始大小':
+                width, height = orig_width, orig_height
+            elif resolution == '超分倍率':
+                width = int(orig_width * scale_factor)
+                height = int(orig_height * scale_factor)
+                logger.info(f"使用超分倍率: {scale_factor}，輸出尺寸: {width}x{height}")
             elif resolution == '自訂':
-                custom_width = self.video_options.get('custom_width')
-                custom_height = self.video_options.get('custom_height')
-                if custom_width and custom_height:
-                    try:
-                        width = int(custom_width)
-                        height = int(custom_height)
-                        logger.info(f"使用自訂分辨率: {width}x{height}")
-                    except ValueError:
-                        logger.warning("無法解析自訂分辨率，使用原始分辨率")
+                try:
+                    width = int(custom_width)
+                    height = int(custom_height)
+                    logger.info(f"使用自訂分辨率: {width}x{height}")
+                except Exception:
+                    logger.warning("無法解析自訂分辨率，使用原始分辨率")
+                    width, height = orig_width, orig_height
             width = width + (width % 2)
             height = height + (height % 2)
             frame_count = 0
@@ -225,24 +261,55 @@ class VideoEnhancerThread(QThread):
                 output_filename = os.path.basename(frame_path)
                 output_frame_path = os.path.join(output_frames_dir, output_filename)
                 try:
-                    with Image.open(frame_path).convert("RGB") as image:
-                        enhanced_image = self.process_single_frame(image)
-                        if width != orig_width or height != orig_height:
-                            enhanced_image = enhanced_image.resize((width, height), Image.Resampling.LANCZOS)
-                        min_preview_interval = 0.2 if self.high_frequency_preview else 0.5
-                        actual_interval = min(self.preview_interval, min_preview_interval)
-                        preview_frames = max(1, int(fps * actual_interval / self.frame_step))
-                        max_frames_interval = 20
-                        preview_frames = min(preview_frames, max_frames_interval)
-                        if i % preview_frames == 0 or i == 0 or i == total_input_frames - 1:
-                            self.current_preview_frame = enhanced_image.copy()
-                            current_frame_index = i * self.frame_step
-                            self.preview_signal.emit(self.current_preview_frame, current_frame_index)
-                            logger.debug(f"發送預覽信號，幀索引: {current_frame_index}")
-                        enhanced_image.save(output_frame_path)
-                        enhanced_image = None
+                    original_image = Image.open(frame_path).convert("RGB")
+                    target_width, target_height = orig_width, orig_height
+                    if resolution == '超分倍率':
+                        target_width = width
+                        target_height = height
+                    elif resolution == '自訂':
+                        target_width = width
+                        target_height = height
+                    else:
+                        target_width = orig_width
+                        target_height = orig_height
+                    enhanced_image = self.process_single_frame(
+                        original_image,
+                        target_width=target_width,
+                        target_height=target_height,
+                        scale_factor=scale_factor if resolution == '超分倍率' else 1.0
+                    )
+                    if self.strength < 1.0:
+                        original_array = np.array(original_image)
+                        enhanced_array = np.array(enhanced_image)
+                        blended_array = cv2.addWeighted(
+                            original_array, 1.0 - self.strength,
+                            enhanced_array, self.strength,
+                            0
+                        )
+                        enhanced_image = Image.fromarray(blended_array)
+                    if (resolution == '原始大小' and (enhanced_image.width != orig_width or enhanced_image.height != orig_height)):
+                        enhanced_image = enhanced_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
+                    elif (enhanced_image.width != width or enhanced_image.height != height):
+                        enhanced_image = enhanced_image.resize((width, height), Image.Resampling.LANCZOS)
+                    min_preview_interval = 0.2 if self.high_frequency_preview else 0.5
+                    actual_interval = min(self.preview_interval, min_preview_interval)
+                    preview_frames = max(1, int(fps * actual_interval / self.frame_step))
+                    max_frames_interval = 20
+                    preview_frames = min(preview_frames, max_frames_interval)
+                    if i % preview_frames == 0 or i == 0 or i == total_input_frames - 1:
+                        self.current_preview_frame = enhanced_image.copy()
+                        current_frame_index = i * self.frame_step
+                        self.preview_signal.emit(self.current_preview_frame, current_frame_index)
+                        logger.debug(f"發送預覽信號，幀索引: {current_frame_index}")
+                    enhanced_image.save(output_frame_path)
+                    enhanced_image = None
                 except Exception as e:
                     logger.error(f"處理幀 {frame_path} 時出錯: {str(e)}")
+                    try:
+                        original_image.save(output_frame_path)
+                        logger.info(f"使用原始幀代替處理失敗的幀: {frame_path}")
+                    except Exception as backup_err:
+                        logger.error(f"保存原始幀作為備用時也出錯: {str(backup_err)}")
                     continue
                 progress = 40 + int((i / total_input_frames) * 50) 
                 self.progress_signal.emit(progress, 100, f"處理幀：{i+1}/{total_input_frames}")
@@ -267,7 +334,10 @@ class VideoEnhancerThread(QThread):
                 success = self.process_audio()
                 if not success:
                     logger.warning("音軌處理失敗，輸出將不包含音軌")
-            self.safe_remove_temp_dir()
+            if self.video_options.get('clean_temp_files', True):
+                self.safe_remove_temp_dir()
+            else:
+                logger.info(f"保留臨時目錄: {self.temp_dir}")
             elapsed_time = time.time() - start_time
             logger.info(f"影片處理完成，耗時 {elapsed_time:.2f} 秒")
             self.finished_signal.emit(self.output_path, elapsed_time)
@@ -277,15 +347,8 @@ class VideoEnhancerThread(QThread):
             self.safe_release_capture()
             self.safe_release_writer()
             self.safe_remove_temp_dir()
-    
-    def process_single_frame(self, image):
-        """處理單個圖像幀
-        Args:
-            image: PIL.Image對象，輸入圖像
-            
-        Returns:
-            PIL.Image對象，處理後的圖像
-        """
+
+    def process_single_frame(self, image, target_width=None, target_height=None, scale_factor=1.0):
         enhancer = process_image_in_patches(
             self.model,
             image,
@@ -293,22 +356,24 @@ class VideoEnhancerThread(QThread):
             block_size=self.block_size,
             overlap=self.overlap,
             use_weight_mask=self.use_weight_mask,
-            blending_mode=self.blending_mode
+            blending_mode=self.blending_mode,
+            use_amp=self.use_amp
         )
         enhanced_image = enhancer.process()
+        if target_width and target_height:
+            if enhanced_image.width != target_width or enhanced_image.height != target_height:
+                enhanced_image = enhanced_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        elif scale_factor and scale_factor != 1.0:
+            new_width = int(enhanced_image.width * scale_factor)
+            new_height = int(enhanced_image.height * scale_factor)
+            enhanced_image = enhanced_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         return enhanced_image
-        
+
     def get_encoder_settings(self):
-        """根據選擇的編碼器返回FFmpeg參數
-        Returns:
-            元組 (編碼器名稱, 額外參數列表)
-        """
         codec_type = self.video_options.get('codec_type', 'H.264')
         encoder = self.video_options.get('encoder', 'x264 (CPU)')
         video_codec = 'libx264'
         extra_params = []
-        
-        # H.264 編碼器
         if codec_type == 'H.264':
             if 'NVENC' in encoder:
                 video_codec = 'h264_nvenc'
@@ -323,8 +388,6 @@ class VideoEnhancerThread(QThread):
             else:
                 video_codec = 'libx264'
                 extra_params.extend(['-pix_fmt', 'yuv420p', '-preset', 'medium'])
-        
-        # H.265/HEVC 編碼器
         elif codec_type == 'H.265/HEVC':
             if 'NVENC' in encoder:
                 video_codec = 'hevc_nvenc'
@@ -339,8 +402,6 @@ class VideoEnhancerThread(QThread):
             else:
                 video_codec = 'libx265'
                 extra_params.extend(['-pix_fmt', 'yuv420p', '-preset', 'medium', '-x265-params', 'log-level=error'])
-        
-        # VP9 編碼器
         elif codec_type == 'VP9':
             video_codec = 'libvpx-vp9'
             if '10-bit' in encoder:
@@ -371,18 +432,8 @@ class VideoEnhancerThread(QThread):
             bitrate = self.video_options.get('bitrate', 8000000) 
             extra_params.extend(['-b:v', f'{bitrate}'])
         return video_codec, extra_params
-    
+
     def create_video_with_ffmpeg(self, output_frames, fps, width, height):
-        """使用FFmpeg從圖像序列創建視頻
-        Args:
-            output_frames: 圖像幀路徑列表
-            fps: 影片幀率
-            width: 影片寬度
-            height: 影片高度
-            
-        Returns:
-            bool: 是否成功創建視頻
-        """
         try:
             output_dir = os.path.dirname(self.output_path)
             os.makedirs(output_dir, exist_ok=True)
@@ -459,12 +510,8 @@ class VideoEnhancerThread(QThread):
         except Exception as e:
             logger.error(f"創建視頻時出錯: {str(e)}")
             return False
-    
+
     def process_audio(self):
-        """處理音軌
-        Returns:
-            bool: 是否成功處理音軌
-        """
         try:
             self.progress_signal.emit(99, 100, "處理音軌中...")
             temp_video = os.path.join(self.temp_dir, "temp_video_with_audio.mp4")

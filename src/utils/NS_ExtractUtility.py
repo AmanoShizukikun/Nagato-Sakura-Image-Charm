@@ -54,7 +54,6 @@ class ExtractUtility:
         """
         if not os.path.exists(file_path):
             return False, f"文件不存在: {file_path}", []
-        
         try:
             if extract_dir is None:
                 extract_dir = os.path.dirname(os.path.abspath(file_path))
@@ -81,10 +80,8 @@ class ExtractUtility:
                     file_path, extract_dir, progress_callback, password, limit_extensions)
             else:
                 return False, f"不支援的壓縮格式: {os.path.basename(file_path)}", []
-            
             if not success:
-                return False, msg, []
-                
+                return False, msg, [] 
             if delete_after and success:
                 try:
                     os.remove(file_path)
@@ -92,7 +89,6 @@ class ExtractUtility:
                 except Exception as e:
                     logger.warning(f"刪除原始壓縮檔失敗: {str(e)}")
             return True, f"解壓縮成功，共{len(extracted_files)}個文件", extracted_files
-        
         except Exception as e:
             error_msg = f"解壓縮失敗: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -183,7 +179,6 @@ class ExtractUtility:
         """解壓縮RAR檔案"""
         if not HAS_RARFILE:
             return False, "缺少rarfile模組，無法解壓RAR檔案，請安裝: pip install rarfile", []
-            
         try:
             extracted_files = []
             with rarfile.RarFile(file_path) as rf:
@@ -267,8 +262,7 @@ class ExtractUtility:
         file_path_lower = file_path.lower()
         for ext in supported_extensions:
             if file_path_lower.endswith(ext):
-                return True
-                
+                return True      
         return False
     
     @staticmethod
@@ -366,8 +360,7 @@ class ExtractUtility:
             else:
                 result["error"] = "不支援的壓縮格式"
         except Exception as e:
-            result["error"] = str(e)
-            
+            result["error"] = str(e) 
         return result
     
     @staticmethod

@@ -30,14 +30,17 @@ class CollapsibleBox(QWidget):
         self.toggle_button.setText(title)
         self.toggle_button.setStyleSheet("QToolButton { font-weight: bold; }")
         self.toggle_button.setIconSize(QSize(14, 14))
+        
         self.content_area = QScrollArea()
         self.content_area.setFrameShape(QFrame.Shape.NoFrame)
         self.content_area.setWidgetResizable(True)
+        
         lay = QVBoxLayout(self)
         lay.setSpacing(0)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.toggle_button)
         lay.addWidget(self.content_area)
+        
         self.toggle_button.clicked.connect(self.on_toggle)
         self.content_frame = QFrame()
         self.content_layout = QVBoxLayout()
@@ -63,6 +66,7 @@ class VideoProcessingTab(QWidget):
         super().__init__()
         self.parent = parent
         self.input_video_path = None
+        self.original_video_size = (0, 0)
         self.setup_ui()
         self.current_frame_index = 0
         self.frame_cache = {}  
@@ -114,6 +118,42 @@ class VideoProcessingTab(QWidget):
                 logger.info(f"已選擇模型: {model_name}")
                 self.reload_models()
     
+    def update_vid_strength_label(self, value):
+        """更新影片處理強度標籤顯示"""
+        actual_strength = (value + 1) * 10
+        self.vid_strength_value_label.setText(f"{actual_strength}%")
+    
+    def update_scale_factor_info(self, value):
+        """更新超分倍率資訊"""
+        factor = value
+        if self.original_video_size != (0, 0):
+            new_width = int(self.original_video_size[0] * factor)
+            new_height = int(self.original_video_size[1] * factor)
+            self.scale_size_info_label.setText(f"輸出尺寸: {new_width} x {new_height} 像素")
+    
+    def update_custom_size_info(self):
+        """更新自訂尺寸資訊"""
+        try:
+            width = int(self.width_input.text() or "0")
+            height = int(self.height_input.text() or "0")
+            if width <= 0 or height <= 0:
+                self.custom_size_info_label.setText("請輸入有效的寬度和高度")
+                return
+            self.custom_size_info_label.setText(f"輸出尺寸: {width} x {height} 像素")
+        except ValueError:
+            self.custom_size_info_label.setText("請輸入有效的寬度和高度")
+    
+    def on_size_option_changed(self):
+        self.scale_factor_spinbox.setEnabled(self.upscale_radio.isChecked())
+        self.scale_size_info_label.setEnabled(self.upscale_radio.isChecked())
+        self.width_input.setEnabled(self.custom_size_radio.isChecked())
+        self.height_input.setEnabled(self.custom_size_radio.isChecked())
+        self.custom_size_info_label.setEnabled(self.custom_size_radio.isChecked())
+        if self.upscale_radio.isChecked():
+            self.update_scale_factor_info(self.scale_factor_spinbox.value())
+        if self.custom_size_radio.isChecked():
+            self.update_custom_size_info()
+    
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(5, 5, 5, 5)
@@ -127,23 +167,17 @@ class VideoProcessingTab(QWidget):
         self.multi_view.image_a_group.setTitle("原始幀預覽")
         self.multi_view.image_b_group.setTitle("增強幀預覽")
         preview_layout.addWidget(self.multi_view)
-        
-        # 影片信息顯示與控制按鈕區域
         info_control_layout = QHBoxLayout()
-        
-        # 影片信息
         info_layout = QHBoxLayout()
         info_layout.addWidget(QLabel("當前影片:"))
         self.vid_path_label = QLabel("未選擇影片")
         info_layout.addWidget(self.vid_path_label)
         info_layout.addStretch()
         info_control_layout.addLayout(info_layout, 1)
-        
-        # 控制按鈕
         controls_layout = QHBoxLayout()
         self.toggle_params_btn = QPushButton("顯示參數面板")
         self.toggle_params_btn.setCheckable(True)
-        self.toggle_params_btn.setChecked(False)  # 默認隱藏參數面板
+        self.toggle_params_btn.setChecked(False)
         self.toggle_params_btn.clicked.connect(self.toggle_params_panel)
         controls_layout.addWidget(self.toggle_params_btn)
         self.open_video_button = QPushButton("開啟影片")
@@ -159,8 +193,6 @@ class VideoProcessingTab(QWidget):
         controls_layout.addWidget(self.stop_processing_button)
         info_control_layout.addLayout(controls_layout)
         preview_layout.addLayout(info_control_layout)
-        
-        # 進度顯示區
         progress_layout = QHBoxLayout()
         self.vid_progress_bar = QProgressBar()
         self.vid_progress_bar.setValue(0)
@@ -179,12 +211,9 @@ class VideoProcessingTab(QWidget):
         params_header.setStyleSheet("font-size: 14px; font-weight: bold;")
         params_layout.addWidget(params_header)
         params_content_layout = QHBoxLayout()
-        
         # === 模型參數區塊 ===
         model_param_box = CollapsibleBox("模型參數設定")
         model_param_layout = QVBoxLayout()
-        
-        # 添加模型選擇下拉選單
         model_layout = QHBoxLayout()
         model_layout.addWidget(QLabel("選擇模型:"))
         self.model_selector = QComboBox()
@@ -192,8 +221,6 @@ class VideoProcessingTab(QWidget):
         self.model_selector.currentIndexChanged.connect(self.on_model_selected)
         model_layout.addWidget(self.model_selector)
         model_param_layout.addLayout(model_layout)
-        
-        # 區塊大小設定
         block_size_layout = QHBoxLayout()
         block_size_layout.addWidget(QLabel("區塊大小:"))
         self.vid_block_size_spin = QSpinBox()
@@ -202,8 +229,6 @@ class VideoProcessingTab(QWidget):
         self.vid_block_size_spin.setSingleStep(32)
         block_size_layout.addWidget(self.vid_block_size_spin)
         model_param_layout.addLayout(block_size_layout)
-        
-        # 重疊大小設定
         overlap_layout = QHBoxLayout()
         overlap_layout.addWidget(QLabel("重疊大小:"))
         self.vid_overlap_spin = QSpinBox()
@@ -212,15 +237,11 @@ class VideoProcessingTab(QWidget):
         self.vid_overlap_spin.setSingleStep(16)
         overlap_layout.addWidget(self.vid_overlap_spin)
         model_param_layout.addLayout(overlap_layout)
-        
-        # 權重遮罩設定
         weight_mask_layout = QHBoxLayout()
         self.vid_weight_mask_check = QCheckBox("使用權重遮罩")
         self.vid_weight_mask_check.setChecked(True)
         weight_mask_layout.addWidget(self.vid_weight_mask_check)
         model_param_layout.addLayout(weight_mask_layout)
-        
-        # 混合模式設定
         blending_layout = QHBoxLayout()
         blending_layout.addWidget(QLabel("混合模式:"))
         self.vid_blending_combo = QComboBox()
@@ -228,40 +249,73 @@ class VideoProcessingTab(QWidget):
         self.vid_blending_combo.setCurrentText('改進型高斯分佈')
         blending_layout.addWidget(self.vid_blending_combo)
         model_param_layout.addLayout(blending_layout)
+        strength_layout = QHBoxLayout()
+        strength_layout.addWidget(QLabel("處理強度:"))
+        self.vid_strength_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vid_strength_slider.setRange(0, 9)
+        self.vid_strength_slider.setValue(9)
+        self.vid_strength_slider.setTickInterval(1)
+        self.vid_strength_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.vid_strength_value_label = QLabel("100%")
+        self.vid_strength_value_label.setMinimumWidth(50)
+        self.vid_strength_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.vid_strength_slider.valueChanged.connect(self.update_vid_strength_label)
+        strength_layout.addWidget(self.vid_strength_slider)
+        strength_layout.addWidget(self.vid_strength_value_label)
+        model_param_layout.addLayout(strength_layout)
         model_param_box.setContentLayout(model_param_layout)
         params_content_layout.addWidget(model_param_box, 1)
-        
         # === 影片參數區塊 ===
-        video_param_box = CollapsibleBox("影片參數設定")
+        video_param_box = CollapsibleBox("影片尺寸與編碼")
         video_param_layout = QVBoxLayout()
-        
-        # -- 輸出影片分辨率 --
-        resolution_layout = QHBoxLayout()
-        resolution_layout.addWidget(QLabel("輸出分辨率:"))
-        self.resolution_combo = QComboBox()
-        self.resolution_combo.addItems(['原始分辨率', '720p', '1080p', '1440p', '4K', '自訂'])
-        self.resolution_combo.currentTextChanged.connect(self.on_resolution_changed)
-        resolution_layout.addWidget(self.resolution_combo)
-        
-        # 自訂分辨率
-        self.custom_resolution_widget = QWidget()
-        custom_resolution_layout = QHBoxLayout(self.custom_resolution_widget)
-        custom_resolution_layout.setContentsMargins(0, 0, 0, 0)
+        # --- 輸出尺寸選項 ---
+        output_size_box = QGroupBox("輸出尺寸設定")
+        output_size_layout = QVBoxLayout(output_size_box)
+        output_size_layout.setContentsMargins(6, 6, 6, 6)
+        self.size_option_group = QButtonGroup(self)
+        size_radio_layout = QHBoxLayout()
+        self.original_size_radio = QRadioButton("原始大小")
+        self.original_size_radio.setChecked(True)
+        self.size_option_group.addButton(self.original_size_radio, 0)
+        size_radio_layout.addWidget(self.original_size_radio)
+        self.upscale_radio = QRadioButton("倍率超分")
+        self.size_option_group.addButton(self.upscale_radio, 1)
+        size_radio_layout.addWidget(self.upscale_radio)
+        self.custom_size_radio = QRadioButton("指定影片大小")
+        self.size_option_group.addButton(self.custom_size_radio, 2)
+        size_radio_layout.addWidget(self.custom_size_radio)
+        output_size_layout.addLayout(size_radio_layout)
+        upscale_option_layout = QHBoxLayout()
+        upscale_option_layout.setContentsMargins(20, 0, 0, 0)
+        upscale_option_layout.addWidget(QLabel("超分倍率:"))
+        self.scale_factor_spinbox = QDoubleSpinBox()
+        self.scale_factor_spinbox.setRange(1.0, 4.0)
+        self.scale_factor_spinbox.setValue(2.0)
+        self.scale_factor_spinbox.setSingleStep(0.05)
+        self.scale_factor_spinbox.setDecimals(2)
+        self.scale_factor_spinbox.setSuffix("x")
+        self.scale_factor_spinbox.setMinimumWidth(80)
+        upscale_option_layout.addWidget(self.scale_factor_spinbox)
+        self.scale_size_info_label = QLabel("輸出尺寸: -- x -- 像素")
+        upscale_option_layout.addWidget(self.scale_size_info_label)
+        output_size_layout.addLayout(upscale_option_layout)
+        # 自訂尺寸控制
+        custom_size_option_layout = QHBoxLayout()
+        custom_size_option_layout.setContentsMargins(20, 0, 0, 0)
+        custom_size_option_layout.addWidget(QLabel("寬度:"))
         self.width_input = QLineEdit()
         self.width_input.setValidator(QIntValidator(32, 7680))
-        self.width_input.setPlaceholderText("寬度")
-        self.width_input.setMaximumWidth(80)
+        self.width_input.setFixedWidth(80)
+        custom_size_option_layout.addWidget(self.width_input)
+        custom_size_option_layout.addWidget(QLabel("高度:"))
         self.height_input = QLineEdit()
         self.height_input.setValidator(QIntValidator(32, 4320))
-        self.height_input.setPlaceholderText("高度")
-        self.height_input.setMaximumWidth(80)
-        custom_resolution_layout.addWidget(self.width_input)
-        custom_resolution_layout.addWidget(QLabel("x"))
-        custom_resolution_layout.addWidget(self.height_input)
-        resolution_layout.addWidget(self.custom_resolution_widget)
-        self.custom_resolution_widget.hide()
-        video_param_layout.addLayout(resolution_layout)
-        
+        self.height_input.setFixedWidth(80)
+        custom_size_option_layout.addWidget(self.height_input)
+        self.custom_size_info_label = QLabel("請輸入有效的寬度和高度")
+        custom_size_option_layout.addWidget(self.custom_size_info_label)
+        output_size_layout.addLayout(custom_size_option_layout)
+        video_param_layout.addWidget(output_size_box)
         # -- 影片裁切方式 --
         crop_layout = QHBoxLayout()
         crop_layout.addWidget(QLabel("裁切方式:"))
@@ -269,7 +323,6 @@ class VideoProcessingTab(QWidget):
         self.crop_combo.addItems(['無裁切', '居中裁切', '智能裁切'])
         crop_layout.addWidget(self.crop_combo)
         video_param_layout.addLayout(crop_layout)
-        
         # -- 編碼器設定 --
         codec_type_layout = QHBoxLayout()
         codec_type_layout.addWidget(QLabel("編碼器類型:"))
@@ -278,17 +331,12 @@ class VideoProcessingTab(QWidget):
         self.codec_type_combo.currentTextChanged.connect(self.update_encoder_options)
         codec_type_layout.addWidget(self.codec_type_combo)
         video_param_layout.addLayout(codec_type_layout)
-        
-        # 編碼器具體選項
         encoder_layout = QHBoxLayout()
         encoder_layout.addWidget(QLabel("編碼器:"))
         self.encoder_combo = QComboBox()
         encoder_layout.addWidget(self.encoder_combo)
         video_param_layout.addLayout(encoder_layout)
-        
-        # 初始化編碼器選項
         self.update_encoder_options("H.264")
-        
         # -- 碼率控制 --
         rate_control_layout = QVBoxLayout()
         rate_control_group_layout = QHBoxLayout()
@@ -304,11 +352,7 @@ class VideoProcessingTab(QWidget):
         self.rate_control_group.addButton(self.crf_radio, 1)
         rate_control_group_layout.addWidget(self.crf_radio)
         rate_control_layout.addLayout(rate_control_group_layout)
-        
-        # 碼率控制堆疊部件，根據選擇切換顯示
         self.rate_control_stack = QStackedWidget()
-        
-        # 平均碼率控件
         abr_widget = QWidget()
         abr_layout = QHBoxLayout(abr_widget)
         abr_layout.setContentsMargins(70, 0, 0, 0)
@@ -318,15 +362,13 @@ class VideoProcessingTab(QWidget):
         self.bitrate_spin.setValue(8)
         abr_layout.addWidget(self.bitrate_spin)
         abr_layout.addStretch()
-        
-        # 恆定品質控件
         crf_widget = QWidget()
         crf_layout = QHBoxLayout(crf_widget)
         crf_layout.setContentsMargins(70, 0, 0, 0)
         crf_layout.addWidget(QLabel("品質(0-51):"))
         self.crf_slider = QSlider(Qt.Orientation.Horizontal)
         self.crf_slider.setRange(0, 51)
-        self.crf_slider.setValue(23)  # 默認品質
+        self.crf_slider.setValue(23)
         self.crf_slider.setMinimumWidth(100)
         crf_layout.addWidget(self.crf_slider)
         self.crf_value_label = QLabel("23")
@@ -334,18 +376,13 @@ class VideoProcessingTab(QWidget):
         self.crf_slider.valueChanged.connect(
             lambda v: self.crf_value_label.setText(str(v))
         )
-        
         self.rate_control_stack.addWidget(abr_widget)
         self.rate_control_stack.addWidget(crf_widget)
-        
-        # 連接信號
         self.abr_radio.toggled.connect(
             lambda: self.rate_control_stack.setCurrentIndex(0 if self.abr_radio.isChecked() else 1)
         )
-        
         rate_control_layout.addWidget(self.rate_control_stack)
         video_param_layout.addLayout(rate_control_layout)
-        
         # -- 聲音設定 --
         audio_layout = QVBoxLayout()
         audio_label = QLabel("聲音設定:")
@@ -365,36 +402,24 @@ class VideoProcessingTab(QWidget):
         self.audio_mode_group.addButton(self.no_audio_radio, 2)
         audio_options_layout.addWidget(self.no_audio_radio)
         audio_layout.addLayout(audio_options_layout)
-        
-        # 音訊格式和品質（當選擇重新編碼時顯示）
         self.audio_settings_widget = QWidget()
         audio_settings_layout = QHBoxLayout(self.audio_settings_widget)
         audio_settings_layout.setContentsMargins(70, 0, 0, 0)
-        
-        # 音訊編碼器
         audio_settings_layout.addWidget(QLabel("音訊格式:"))
         self.audio_codec_combo = QComboBox()
         self.audio_codec_combo.addItems(['AAC', 'Opus', 'Vorbis', 'MP3'])
         audio_settings_layout.addWidget(self.audio_codec_combo)
-        
-        # 音訊碼率
         audio_settings_layout.addWidget(QLabel("音訊碼率:"))
         self.audio_bitrate_combo = QComboBox()
         self.audio_bitrate_combo.addItems(['128k', '192k', '256k', '320k'])
         self.audio_bitrate_combo.setCurrentText('192k')
         audio_settings_layout.addWidget(self.audio_bitrate_combo)
-        
-        # 初始隱藏
         self.audio_settings_widget.setVisible(False)
-        
-        # 當選擇重新編碼時顯示音訊設定
         self.reencode_audio_radio.toggled.connect(
             lambda checked: self.audio_settings_widget.setVisible(checked)
         )
         audio_layout.addWidget(self.audio_settings_widget)
         video_param_layout.addLayout(audio_layout)
-        
-        # -- 影片格式 --
         format_layout = QHBoxLayout()
         format_layout.addWidget(QLabel("輸出格式:"))
         self.format_combo = QComboBox()
@@ -403,12 +428,9 @@ class VideoProcessingTab(QWidget):
         video_param_layout.addLayout(format_layout)
         video_param_box.setContentLayout(video_param_layout)
         params_content_layout.addWidget(video_param_box, 1)
-        
         # === 處理選項區塊 ===
         processing_options_box = CollapsibleBox("處理選項")
         processing_options_layout = QVBoxLayout()
-        
-        # 幀處理設定
         frame_step_layout = QHBoxLayout()
         frame_step_layout.addWidget(QLabel("處理每幀:"))
         self.frame_step_spin = QSpinBox()
@@ -418,28 +440,22 @@ class VideoProcessingTab(QWidget):
         self.frame_step_spin.setSuffix("幀")
         frame_step_layout.addWidget(self.frame_step_spin)
         processing_options_layout.addLayout(frame_step_layout)
-        
-        # 同步預覽幀設定
         sync_preview_layout = QHBoxLayout()
         self.sync_preview_check = QCheckBox("同步預覽幀")
         self.sync_preview_check.setChecked(True)
         self.sync_preview_check.setToolTip("啟用後將同時更新原始幀和增強幀預覽")
         sync_preview_layout.addWidget(self.sync_preview_check)
         processing_options_layout.addLayout(sync_preview_layout)
-        
-        # 預覽間隔設定
         preview_interval_layout = QHBoxLayout()
         preview_interval_layout.addWidget(QLabel("預覽間隔:"))
         self.preview_interval_spin = QSpinBox()
         self.preview_interval_spin.setRange(1, 30)
         self.preview_interval_spin.setValue(5)
         self.preview_interval_spin.setSingleStep(1)
-        self.preview_interval_spin.setSuffix("秒")
-        self.preview_interval_spin.setToolTip("設置每隔多少秒更新一次預覽畫面")
+        self.preview_interval_spin.setSuffix("幀")
+        self.preview_interval_spin.setToolTip("設置每隔多少幀更新一次預覽畫面")
         preview_interval_layout.addWidget(self.preview_interval_spin)
         processing_options_layout.addLayout(preview_interval_layout)
-        
-        # 處理優先級
         priority_layout = QHBoxLayout()
         priority_layout.addWidget(QLabel("處理優先級:"))
         self.priority_combo = QComboBox()
@@ -448,8 +464,14 @@ class VideoProcessingTab(QWidget):
         self.priority_combo.setToolTip("設置處理線程的優先級")
         priority_layout.addWidget(self.priority_combo)
         processing_options_layout.addLayout(priority_layout)
-        
-        # 暫存檔案管理
+        amp_layout = QHBoxLayout()
+        amp_layout.addWidget(QLabel("混合精度:"))
+        self.amp_combo = QComboBox()
+        self.amp_combo.addItems(['自動偵測', '強制啟用', '強制禁用'])
+        self.amp_combo.setCurrentText('自動偵測')
+        self.amp_combo.setToolTip("自動偵測: 根據GPU類型自動決定\n強制啟用: 使用混合精度計算(較快但可能有問題)\n強制禁用: 使用完整精度計算(較穩定但較慢)")
+        amp_layout.addWidget(self.amp_combo)
+        processing_options_layout.addLayout(amp_layout)
         temp_file_layout = QHBoxLayout()
         self.clean_temp_check = QCheckBox("處理完成後清理暫存檔案")
         self.clean_temp_check.setChecked(True)
@@ -464,18 +486,14 @@ class VideoProcessingTab(QWidget):
         self.main_splitter.setSizes([700, 300])
         self.main_splitter.widget(1).hide()
         main_layout.addWidget(self.main_splitter)
-    
-    def on_resolution_changed(self, text):
-        """處理分辨率選擇變更事件"""
-        if text == '自訂':
-            self.custom_resolution_widget.show()
-        else:
-            self.custom_resolution_widget.hide()
+        self.size_option_group.buttonClicked.connect(self.on_size_option_changed)
+        self.scale_factor_spinbox.valueChanged.connect(self.update_scale_factor_info)
+        self.width_input.textChanged.connect(self.update_custom_size_info)
+        self.height_input.textChanged.connect(self.update_custom_size_info)
+        self.on_size_option_changed()
     
     def update_encoder_options(self, codec_type):
-        """根據選擇的編碼器類型更新具體編碼器選項"""
         self.encoder_combo.clear()
-        
         if codec_type == 'H.264':
             self.encoder_combo.addItems([
                 'x264 (CPU)', 
@@ -505,7 +523,6 @@ class VideoProcessingTab(QWidget):
             ])
     
     def toggle_params_panel(self, checked):
-        """顯示/隱藏參數面板"""
         if checked:
             self.main_splitter.widget(1).show()
             self.toggle_params_btn.setText("隱藏參數面板")
@@ -514,7 +531,6 @@ class VideoProcessingTab(QWidget):
             self.toggle_params_btn.setText("顯示參數面板")
     
     def open_video(self):
-        """開啟影片文件"""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "開啟影片", "", "影片文件 (*.mp4 *.avi *.mkv *.mov *.webm)"
         )
@@ -528,6 +544,7 @@ class VideoProcessingTab(QWidget):
             if ret:
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 original_frame = Image.fromarray(frame_rgb)
+                self.original_video_size = (original_frame.width, original_frame.height)
                 self.multi_view.set_images(
                     image_a=original_frame,
                     image_b=None,
@@ -542,23 +559,23 @@ class VideoProcessingTab(QWidget):
                 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                 info_text = f"影片資訊: {width}x{height}, {fps:.2f} FPS, {frame_count} 幀, {duration:.2f} 秒"
                 self.vid_status_label.setText(info_text)
+                self.update_scale_factor_info(self.scale_factor_spinbox.value())
+                if not self.width_input.text() and not self.height_input.text():
+                    self.width_input.setText(str(width))
+                    self.height_input.setText(str(height))
+                self.update_custom_size_info()
             cap.release()
             self.enhance_video_button.setEnabled(True)
             if self.parent:
                 self.parent.tab_widget.setCurrentIndex(1)
     
     def enhance_video(self):
-        """開始增強處理影片"""
         if not self.input_video_path:
             QMessageBox.warning(self, "警告", "請先開啟影片。")
             return
-
-        # 檢查是否有選擇模型
         if not self.model_manager or not self.model_manager.get_registered_model_path():
             QMessageBox.warning(self, "警告", "請先選擇要使用的模型。")
             return
-        
-        # 根據所選格式獲取檔案副檔名
         selected_format = self.format_combo.currentText().lower()
         extension = f".{selected_format}"
         output_path, _ = QFileDialog.getSaveFileName(
@@ -566,25 +583,18 @@ class VideoProcessingTab(QWidget):
         )
         if not output_path:
             return
-        
-        # 確保輸出文件有正確的擴展名
         if not output_path.lower().endswith(extension):
             output_path += extension
-        
-        # 禁用控制按鈕並重置進度顯示
         self.enhance_video_button.setEnabled(False)
         self.open_video_button.setEnabled(False)
         self.stop_processing_button.setEnabled(True)
         self.vid_progress_bar.setValue(0)
         self.vid_status_label.setText("準備處理影片...")
         self.vid_remaining_label.setText("預計剩餘時間: 計算中...")
-        
         try:
-            # 載入模型到記憶體
             self.model_status_label.setText("模型狀態: 載入中...")
             if self.parent:
                 self.parent.statusBar.showMessage("正在載入模型到記憶體...")
-            # 步驟1: 先載入模型，獲取成功/失敗結果
             success = self.model_manager.prepare_model_for_inference()
             if not success:
                 QMessageBox.warning(self, "錯誤", "模型載入失敗。")
@@ -593,44 +603,43 @@ class VideoProcessingTab(QWidget):
                 self.stop_processing_button.setEnabled(False)
                 self.model_status_label.setText("模型狀態: 載入失敗")
                 return
-            
-            # 步驟2: 從模型管理器獲取實際模型物件
             model = self.model_manager.get_current_model()
-                
-            # 更新模型狀態
             model_path = self.model_manager.get_registered_model_path()
             model_name = os.path.basename(model_path) if model_path else "未知模型"
             self.model_status_label.setText(f"模型狀態: 已載入 {model_name}")
             if self.parent:
                 self.parent.statusBar.showMessage(f"模型已載入: {model_name}，開始處理影片...")
-            
-            # 獲取模型參數
             block_size = self.vid_block_size_spin.value()
             overlap = self.vid_overlap_spin.value()
             use_weight_mask = self.vid_weight_mask_check.isChecked()
             blending_mode = self.vid_blending_combo.currentText()
-            
-            # 獲取影片處理參數
+            strength_percent = (self.vid_strength_slider.value() + 1) * 10
+            strength = strength_percent / 100.0
             frame_step = self.frame_step_spin.value()
             sync_preview = self.sync_preview_check.isChecked()
             preview_interval = self.preview_interval_spin.value()
             clean_temp_files = self.clean_temp_check.isChecked()
-            
-            # 獲取分辨率
-            resolution = self.resolution_combo.currentText()
-            custom_width = self.width_input.text() if resolution == '自訂' else None
-            custom_height = self.height_input.text() if resolution == '自訂' else None
-            
-            # 獲取碼率控制參數
+            # 尺寸設定
+            if self.original_size_radio.isChecked():
+                resolution = '原始大小'
+                scale_factor = 1.0
+                custom_width = None
+                custom_height = None
+            elif self.upscale_radio.isChecked():
+                resolution = '超分倍率'
+                scale_factor = self.scale_factor_spinbox.value()
+                custom_width = None
+                custom_height = None
+            else:
+                resolution = '自訂'
+                scale_factor = 1.0
+                custom_width = self.width_input.text()
+                custom_height = self.height_input.text()
             bitrate_mode = "crf" if self.crf_radio.isChecked() else "abr"
             bitrate_value = self.bitrate_spin.value() * 1000000 if bitrate_mode == "abr" else None
             crf_value = self.crf_slider.value() if bitrate_mode == "crf" else None
-            
-            # 獲取編碼器資訊
             codec_type = self.codec_type_combo.currentText()
             encoder = self.encoder_combo.currentText()
-            
-            # 獲取是否保留音軌
             if self.keep_audio_radio.isChecked():
                 audio_mode = "keep"
             elif self.reencode_audio_radio.isChecked():
@@ -639,8 +648,19 @@ class VideoProcessingTab(QWidget):
                 audio_mode = "none"
             audio_codec = self.audio_codec_combo.currentText() if audio_mode == "reencode" else None
             audio_bitrate = self.audio_bitrate_combo.currentText() if audio_mode == "reencode" else None
+            amp_setting = self.amp_combo.currentText()
+            use_amp = None
+            if amp_setting == '強制啟用':
+                use_amp = True
+                logger.info("使用強制啟用的混合精度計算模式")
+            elif amp_setting == '強制禁用':
+                use_amp = False
+                logger.info("使用強制禁用的混合精度計算模式")
+            else:
+                logger.info("使用自動偵測的混合精度計算模式")
             video_options = {
-                'resolution': resolution, 
+                'resolution': resolution,
+                'scale_factor': scale_factor,
                 'custom_width': custom_width,
                 'custom_height': custom_height,
                 'crop_mode': self.crop_combo.currentText(),
@@ -653,7 +673,8 @@ class VideoProcessingTab(QWidget):
                 'audio_codec': audio_codec,
                 'audio_bitrate': audio_bitrate,
                 'format': self.format_combo.currentText().lower(),
-                'clean_temp_files': clean_temp_files
+                'clean_temp_files': clean_temp_files,
+                'use_amp': use_amp
             }
             self.video_enhancer_thread = VideoEnhancerThread(
                 model,
@@ -668,7 +689,8 @@ class VideoProcessingTab(QWidget):
                 preview_interval=preview_interval,
                 keep_audio=(audio_mode != "none"),
                 sync_preview=sync_preview,
-                video_options=video_options
+                video_options=video_options,
+                strength=strength
             )
             self.video_enhancer_thread.progress_signal.connect(self.update_video_progress)
             self.video_enhancer_thread.finished_signal.connect(self.video_process_finished)
@@ -677,7 +699,6 @@ class VideoProcessingTab(QWidget):
             self.frame_cache = {}  
             self.current_frame_index = 0
             self.video_enhancer_thread.start()
-            
         except Exception as e:
             logger.error(f"影片處理過程中發生錯誤: {str(e)}")
             QMessageBox.critical(self, "錯誤", f"處理時出錯: {str(e)}")
@@ -688,7 +709,6 @@ class VideoProcessingTab(QWidget):
             self.model_manager.clear_cache()
     
     def stop_video_processing(self):
-        """停止影片處理"""
         if hasattr(self, 'video_enhancer_thread') and self.video_enhancer_thread.isRunning():
             reply = QMessageBox.question(
                 self, "確認", 
@@ -709,13 +729,11 @@ class VideoProcessingTab(QWidget):
                     self.model_status_label.setText("模型狀態: 卸載失敗")
     
     def enable_video_ui(self):
-        """啟用影片處理UI控制項"""
         self.enhance_video_button.setEnabled(True)
         self.open_video_button.setEnabled(True)
         self.stop_processing_button.setEnabled(False)
     
     def update_video_progress(self, current, total, status):
-        """更新影片處理進度"""
         self.vid_progress_bar.setValue(current)
         self.vid_status_label.setText(status)
         elapsed = time.time() - self.video_start_time
@@ -727,7 +745,6 @@ class VideoProcessingTab(QWidget):
             self.vid_remaining_label.setText(f"預計剩餘時間: {hours:02d}:{minutes:02d}:{seconds:02d}")
     
     def video_process_finished(self, output_path, elapsed_time):
-        """處理完成回調"""
         self.enable_video_ui()
         try:
             self.model_manager.clear_cache()
@@ -763,7 +780,6 @@ class VideoProcessingTab(QWidget):
             self.vid_status_label.setText("影片處理失敗。")
     
     def get_frame_at_index(self, frame_index):
-        """根據幀索引獲取原始幀"""
         if frame_index in self.frame_cache:
             return self.frame_cache[frame_index]
         if not self.input_video_path or not os.path.exists(self.input_video_path):
@@ -779,7 +795,7 @@ class VideoProcessingTab(QWidget):
             if ret:
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 original_frame = Image.fromarray(frame_rgb)
-                if len(self.frame_cache) > 10:
+                if len(self.frame_cache) > 10:  
                     oldest_key = list(self.frame_cache.keys())[0]
                     del self.frame_cache[oldest_key]
                 self.frame_cache[frame_index] = original_frame
@@ -791,7 +807,6 @@ class VideoProcessingTab(QWidget):
         return None
 
     def display_enhanced_frame(self, enhanced_frame, frame_index=None):
-        """顯示增強後的幀，支持同步顯示原始幀"""
         if frame_index is not None and self.sync_preview_check.isChecked():
             self.current_frame_index = frame_index
             original_frame = self.get_frame_at_index(frame_index)
@@ -799,7 +814,7 @@ class VideoProcessingTab(QWidget):
             original_frame = self.get_frame_at_index(0)
         if original_frame:
             frame_text = f"原始幀預覽 (幀: {frame_index})" if frame_index is not None else "原始幀預覽"
-            enhanced_text = f"增強幀預覽 (幀: {frame_index})" if frame_index is not None else "增強幀預覽"
+            enhanced_text = f"增強幀預覽 (幀: {frame_index})" if frame_index is not None else f"增強幀預覽"
             self.multi_view.set_images(
                 image_a=original_frame,
                 image_b=enhanced_frame,
