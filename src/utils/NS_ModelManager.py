@@ -538,15 +538,38 @@ class ModelManager(QObject):
         return len(self.get_available_models()) > 0
     
     def clear_cache(self):
-        """清空模型快取，釋放記憶體"""
+        """清空模型快取，釋放記憶體和顯存"""
         try:
+            logger.info("開始清理模型快取和釋放顯存...")
+            for model_path, model in self.model_cache.items():
+                try:
+                    logger.debug(f"將模型從顯存移至 CPU: {os.path.basename(model_path)}")
+                    model.cpu()
+                except Exception as e:
+                    logger.error(f"將模型移至 CPU 時出錯: {str(e)}")
             self.model_cache.clear()
             self.current_model = None
             self.current_model_path = None
             for path in self.model_statuses:
                 if self.model_statuses[path] == "active":
                     self.model_statuses[path] = "registered" if path == self.registered_model_path else "available"
-            logger.info("已清空模型快取")
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                try:
+                    before_free = torch.cuda.memory_reserved() / 1024**2
+                    logger.info(f"CUDA 緩存清理前顯存保留: {before_free:.2f} MB")
+                except Exception as e:
+                    logger.warning(f"無法獲取釋放前顯存資訊: {str(e)}")
+                torch.cuda.empty_cache()
+                try:
+                    after_free = torch.cuda.memory_reserved() / 1024**2
+                    logger.info(f"CUDA 緩存清理後顯存保留: {after_free:.2f} MB")
+                    logger.info(f"釋放了約 {before_free - after_free:.2f} MB 顯存")
+                except Exception as e:
+                    logger.warning(f"無法獲取釋放後顯存資訊: {str(e)}")
+            gc.collect()
+            logger.info("模型快取清理完成")
             return True
         except Exception as e:
             logger.error(f"清空模型快取時出錯: {str(e)}")
