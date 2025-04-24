@@ -306,7 +306,6 @@ class ImageEnhancerApp(QMainWindow):
         else:
             self.statusBar.showMessage("請先切換到圖片處理分頁以儲存圖片", 3000)
 
-
     def download_model(self):
         """開啟模型下載對話框"""
         try:
@@ -461,7 +460,7 @@ class ImageEnhancerApp(QMainWindow):
     def handle_about_icon_click(self):
         """處理關於對話框圖標的點擊事件"""
         self.about_clicks += 1
-        logger.debug(f"About icon clicked {self.about_clicks} times.")  # 除錯用
+        logger.debug(f"About icon clicked {self.about_clicks} times.")
         if self.about_clicks == 9:
             self.about_clicks = 0 
             for widget in QApplication.topLevelWidgets():

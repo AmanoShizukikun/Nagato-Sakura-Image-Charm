@@ -1,4 +1,16 @@
-### 1.0.1 (2025 年 4 月 22 日) 版本代號: Kyouka (鏡花)
+### 1.0.2 (2025 年 4 月 25 日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
+### 重要變更
+### 新增功能
+- 【更新】基準測試的頁面，現在的基準測試更能判斷出設備性能的差距且更加美觀。
+- 【修復】基準測試選擇 CPU 運行時，張量在不同設備導致基準測試錯誤。
+- 【修復】基準測試現在能正確顯示 CPU 的型號。
+- 【修復】調整不同分塊大小運行模型後沒有成功卸載模型的問題。
+### 已知問題
+- 【錯誤】影像評估核心尚未完成，導致評估錯誤。
+- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
+
+### 1.0.1 (2025 年 4 月 22 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
 ### 重要變更
 - 【重大】調整了模型的存取機制。
@@ -21,7 +33,7 @@
 - 【錯誤】基準測試 CPU 型號不直覺，基準測試不夠符合實際場景。
 - 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
 
-### 1.0.0 (2025 年 4 月 19 日) 版本代號: Kyouka (鏡花)
+### 1.0.0 (2025 年 4 月 19 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
 ### 重要變更
 - 【重大】首個發布版本，其實 1.0.0 版4月8日就完成了但還在決定版本命名及其他細項所以一直沒發佈。

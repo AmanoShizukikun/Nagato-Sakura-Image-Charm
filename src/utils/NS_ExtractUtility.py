@@ -48,7 +48,6 @@ class ExtractUtility:
             progress_callback: 進度回調函數 (current, total, filename)
             password: 解壓密碼，若檔案有加密保護
             limit_extensions: 限制僅解壓這些副檔名的文件，None表示解壓所有文件
-            
         Returns:
             tuple: (成功與否, 訊息, 解壓出的文件列表)
         """
@@ -249,7 +248,6 @@ class ExtractUtility:
         """檢查檔案是否為支援的壓縮格式
         Args:
             file_path: 檔案路徑
-            
         Returns:
             bool: 是否為支援的壓縮檔案
         """
@@ -284,7 +282,6 @@ class ExtractUtility:
         Args:
             extracted_files: 解壓出的文件列表
             file_types: 文件類型列表，例如 ['.pth', '.pt']
-            
         Returns:
             list: 符合類型的文件列表
         """

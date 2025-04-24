@@ -25,7 +25,6 @@ class MultiScaleDiscriminator(nn.Module):
         super(MultiScaleDiscriminator, self).__init__()
         self.num_scales = num_scales
         self.discriminators = nn.ModuleList()
-        
         for _ in range(num_scales):
             self.discriminators.append(self._create_discriminator(input_channels))
             
@@ -106,13 +105,10 @@ class QualityDataset(Dataset):
         high_quality_path = os.path.join(self.data_dir, high_quality_file)
         low_quality_img = Image.open(low_quality_path).convert('RGB')
         high_quality_img = Image.open(high_quality_path).convert('RGB')
-        
         if self.transform:
             low_quality_img = self.transform(low_quality_img)
             high_quality_img = self.transform(high_quality_img)
-            
         return low_quality_img, high_quality_img
-
 
 def format_time(seconds):
     """將秒數格式化為易讀的時間字串"""
@@ -126,7 +122,6 @@ def format_time(seconds):
         hours = seconds // 3600
         minutes = (seconds % 3600) // 60
         return f"{int(hours)}h {int(minutes)}m"
-
 
 def calculate_psnr(img1, img2):
     """計算兩張圖片的峰值信噪比 (PSNR)"""

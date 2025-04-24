@@ -10,10 +10,23 @@
 「長門櫻-影像魅影」是「長門櫻計畫」的衍生品，是以「長門櫻」的影像核心為基底衍生出的圖形化的影像增強與評估工具，支援 AI 超分辨率、圖片及影片增強、品質評估等功能。
 
 ## 公告
-不再每個小版本更新預覽圖了，以後只有大版本才會有提更預覽更新。
+- 由於訓練模型導致當前算力短缺，將不再及時更新小版本的預覽圖以及程式的版本號，將在日後的更新慢慢補上。
+- 由於連續熬夜肝程式肝了好幾天(修正第七代模型)，身心俱疲所以先不發布第七代馬賽克還原模型 Ritsuka-HQ。
 
 ## 近期變動
-### 1.0.1 (2025 年 4 月 22 日) 版本代號: Kyouka (鏡花)
+### 1.0.2 (2025 年 4 月 25 日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
+### 重要變更
+### 新增功能
+- 【更新】基準測試的頁面，現在的基準測試更能判斷出設備性能的差距且更加美觀。
+- 【修復】基準測試選擇 CPU 運行時，張量在不同設備導致基準測試錯誤。
+- 【修復】基準測試現在能正確顯示 CPU 的型號。
+- 【修復】調整不同分塊大小運行模型後沒有成功卸載模型的問題。
+### 已知問題
+- 【錯誤】影像評估核心尚未完成，導致評估錯誤。
+- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
+
+### 1.0.1 (2025 年 4 月 22 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
 ### 重要變更
 - 【重大】調整了模型的存取機制。
@@ -36,7 +49,7 @@
 - 【錯誤】基準測試 CPU 型號不直覺，基準測試不夠符合實際場景。
 - 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
 
-### 1.0.0 (2025 年 4 月 19 日) 版本代號: Kyouka (鏡花)
+### 1.0.0 (2025 年 4 月 19 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
 ### 重要變更
 - 【重大】首個發布版本，其實 1.0.0 版4月8日就完成了但還在決定版本命名及其他細項所以一直沒發佈。
@@ -85,7 +98,7 @@ cd Nagato-Sakura-Image-Charm-py
 pip install -r requirements.txt
 ```
 ## GUI 介面
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/GUI.png)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/GUI_1.png)
 ### 開啟GUI
 ```shell
 python main.py
@@ -101,14 +114,14 @@ python main.py
   - 程式相關
     - [x] 模型強度調整。
     - [x] 圖片超分辨率。
-    - [ ] 影片超分辨率。
+    - [x] 影片超分辨率。
     
   - 模型
     - [x] 第6代《鏡花・碎象還映》Kyouka 泛用型動畫圖像 JPEG 壓縮還原模型。
     - [x] 第6代《鏡花・幽映深層》Kyouka-LQ 低畫質特化動畫圖像 JPEG 壓縮還原模型。
-    - [ ] 第6代《鏡花・霞緲輪影》Kyouka-MQ 普通畫質特化動畫圖像 JPEG 壓縮還原模型。
-    - [ ] 第6代《斷律・映格輪廻》Ritsuka 馬賽克還原模型。 
-    - [ ] 第6代《界律・重編因像》Kairitsu 寫實畫面修復模型。
+    - [x] 第7代《鏡花・霞緲輪影》Kyouka-MQ 普通畫質特化動畫圖像 JPEG 壓縮還原模型。
+    - [ ] 第7代《斷律・映格輪廻》Ritsuka 馬賽克還原模型。 
+    - [ ] 第7代《界律・重編因像》Kairitsu 寫實畫面修復模型。
 
 ## 致謝
 特別感謝以下項目和貢獻者：

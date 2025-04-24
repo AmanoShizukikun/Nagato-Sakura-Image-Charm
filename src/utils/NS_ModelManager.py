@@ -12,6 +12,7 @@ from src.models.NS_ImageEnhancer import ImageQualityEnhancer
 from src.utils.NS_DownloadManager import DownloadManager
 from src.utils.NS_ExtractUtility import ExtractUtility 
 
+
 logger = logging.getLogger(__name__)
 
 class ModelManager(QObject):
@@ -90,10 +91,8 @@ class ModelManager(QObject):
             if not os.path.exists(self.models_file):
                 self._create_default_models_file()
                 return True
-                
             with open(self.models_file, 'r', encoding='utf-8') as f:
                 self.models_data = json.load(f)
-                
             logger.info(f"已載入 {len(self.models_data.get('models', {}))} 個模型資料")
             return True
         except Exception as e:
@@ -501,7 +500,7 @@ class ModelManager(QObject):
             logger.info(f"載入模型: {os.path.basename(model_path)}")
             self.update_progress_signal.emit(f"正在載入模型: {os.path.basename(model_path)}...")
             model = ImageQualityEnhancer()
-            model_state = torch.load(model_path, map_location=self.device)
+            model_state = torch.load(model_path, map_location=self.device, weights_only=True)
             model.load_state_dict(model_state)
             model = model.to(self.device)
             if len(self.model_cache) >= self.max_cache_size:

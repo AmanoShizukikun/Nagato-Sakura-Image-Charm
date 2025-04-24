@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 class VideoEnhancerThread(QThread):
     """影片增強處理執行緒，負責逐幀處理並輸出增強後的影片"""
-    progress_signal = pyqtSignal(int, int, str)  # 進度信號：目前進度、總進度、狀態訊息
-    finished_signal = pyqtSignal(str, float)     # 完成信號：輸出檔案路徑、耗時
-    preview_signal = pyqtSignal(object, int)     # 預覽信號：增強後的幀、幀索引
+    progress_signal = pyqtSignal(int, int, str)
+    finished_signal = pyqtSignal(str, float)
+    preview_signal = pyqtSignal(object, int)
 
     def __init__(self, model, input_path, output_path, device, block_size, overlap, 
                 use_weight_mask, blending_mode, frame_step=1, preview_interval=1, keep_audio=True,
