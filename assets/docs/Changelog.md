@@ -1,5 +1,5 @@
 ### 1.0.2 (2025 年 4 月 25 日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.2.jpg)
 ### 重要變更
 ### 新增功能
 - 【更新】基準測試的頁面，現在的基準測試更能判斷出設備性能的差距且更加美觀。
@@ -11,7 +11,7 @@
 - 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
 
 ### 1.0.1 (2025 年 4 月 22 日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.1.jpg)
 ### 重要變更
 - 【重大】調整了模型的存取機制。
 ### 新增功能
