@@ -1,5 +1,6 @@
 import os
 import logging
+import torch
 from PIL import Image
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
                             QFileDialog, QProgressBar, QComboBox, QSpinBox, QCheckBox, 
@@ -13,6 +14,7 @@ from src.ui.views import MultiViewWidget
 from src.processing.NS_ImageProcessor import ImageProcessor
 from src.threads.NS_EnhancerThread import EnhancerThread
 
+from src.utils.NS_DeviceInfo import get_system_info, get_device_options, get_device_name
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,7 @@ class ImageProcessingTab(QWidget):
         self.enhanced_image = None
         self.model_manager = None
         self.original_image_size = (0, 0) 
+        self.system_info = get_system_info()
         self.setup_ui()
     
     def set_model_manager(self, model_manager):
@@ -285,13 +288,22 @@ class ImageProcessingTab(QWidget):
         self.save_format_combo.setCurrentText('PNG')
         self.save_format_combo.setMinimumWidth(100)
         processing_options_grid.addWidget(self.save_format_combo, 0, 1)
-        processing_options_grid.addWidget(QLabel("混合精度:"), 1, 0)
+        processing_options_grid.addWidget(QLabel("計算設備:"), 1, 0)
+        self.device_combo = QComboBox()
+        device_options = get_device_options(self.system_info)
+        for display_text, device_value in device_options:
+            self.device_combo.addItem(display_text, device_value)
+        
+        self.device_combo.setToolTip("自動選擇: 使用系統默認設備\nCUDA: 使用GPU處理（較快）\nCPU: 使用CPU處理（較穩定但較慢）")
+        processing_options_grid.addWidget(self.device_combo, 1, 1)
+        
+        processing_options_grid.addWidget(QLabel("混合精度:"), 2, 0)
         self.amp_combo = QComboBox()
         self.amp_combo.addItems(['自動偵測', '強制啟用', '強制禁用'])
         self.amp_combo.setCurrentText('自動偵測')
         self.amp_combo.setMinimumWidth(100)
         self.amp_combo.setToolTip("自動偵測: 根據GPU類型自動決定\n強制啟用: 使用混合精度計算(較快但可能有問題)\n強制禁用: 使用完整精度計算(較穩定但較慢)")
-        processing_options_grid.addWidget(self.amp_combo, 1, 1)
+        processing_options_grid.addWidget(self.amp_combo, 2, 1)
         processing_options_box.setContentLayout(processing_options_grid)
         column1_layout.addWidget(processing_options_box)
         column1_layout.addStretch(1)
@@ -467,6 +479,20 @@ class ImageProcessingTab(QWidget):
             self.model_status_label.setText(f"模型狀態: 已載入 {model_name}")
             if self.parent:
                 self.parent.statusBar.showMessage(f"模型已載入: {model_name}，開始處理圖片...")
+            device_selection = self.device_combo.currentData()
+            if device_selection == "auto":
+                device = self.model_manager.get_device()
+                self.used_device_name = "自動選擇"
+                if device.type == "cuda":
+                    self.used_device_name = f"自動選擇 - {get_device_name(device, self.system_info)}"
+                else:
+                    self.used_device_name = f"自動選擇 - {self.system_info.get('cpu_brand_model', 'CPU')} (CPU)"
+                logger.info(f"使用自動選擇的設備: {device}, {self.used_device_name}")
+            else:
+                device = torch.device(device_selection)
+                self.used_device_name = self.device_combo.currentText()
+                logger.info(f"使用手動選擇的設備: {device}, {self.used_device_name}")
+            
             block_size = self.block_size_spin.value()
             overlap = self.overlap_spin.value()
             use_weight_mask = self.weight_mask_check.isChecked()
@@ -505,7 +531,7 @@ class ImageProcessingTab(QWidget):
             else:
                 logger.info("使用自動偵測的混合精度計算模式")
             self.img_status_label.setText("處理中...")
-            device = self.model_manager.get_device()
+            logger.info(f"使用設備: {get_device_name(device, self.system_info)}")
             self.enhancer_thread = EnhancerThread(
                 model, 
                 self.input_image_path, 
@@ -549,6 +575,7 @@ class ImageProcessingTab(QWidget):
             resize_info = f", 超分: {factor:.2f}x"
         elif self.custom_size_radio.isChecked():
             resize_info = f", 自訂尺寸"
+        device_info = ""
         amp_info = ""
         if self.amp_combo.currentText() != '自動偵測':
             amp_info = f", 混合精度: {self.amp_combo.currentText()}"
@@ -556,7 +583,7 @@ class ImageProcessingTab(QWidget):
             image_a=original_image,
             image_b=enhanced_image,
             image_a_name=f"原始圖片 - {os.path.basename(self.input_image_path)} ({original_image.width}x{original_image.height})",
-            image_b_name=f"增強圖片 {size_info} (強度: {strength_percent}%{resize_info}{amp_info})"
+            image_b_name=f"增強圖片 {size_info} (強度: {strength_percent}%{resize_info}{device_info}{amp_info})"
         )
         self.img_status_label.setText(f"處理完成！耗時: {elapsed_time:.2f} 秒")
         self.enhance_button.setEnabled(True)

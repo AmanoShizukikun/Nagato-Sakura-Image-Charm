@@ -13,7 +13,7 @@ MAP_WIDTH = 16
 MAP_HEIGHT = 16
 CELL_SIZE = 64 
 MOUSE_SENSITIVITY = 0.0005
-NAGATO_ICON_PATH = "assets/icon/1.0.2.ico"
+NAGATO_ICON_PATH = "assets/icon/1.1.0.ico"
 
 # --- 地圖 ---
 # 0 = 空地, 1 = 牆壁 (櫻花粉色), 2 = 牆壁 (深粉色)

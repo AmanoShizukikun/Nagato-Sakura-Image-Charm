@@ -17,6 +17,13 @@ from src.processing.NS_PatchProcessor import process_image_in_patches
 
 logger = logging.getLogger(__name__)
 
+def log_gpu_memory(device, message=""):
+    """記錄當前GPU顯存使用情況"""
+    if device.type == 'cuda':
+        allocated = torch.cuda.memory_allocated(device) / (1024*1024)
+        reserved = torch.cuda.memory_reserved(device) / (1024*1024)
+        logger.debug(f"GPU顯存狀態 {message}: 已分配={allocated:.2f}MB, 已保留={reserved:.2f}MB")
+
 class BenchmarkProcessor:
     """長門櫻-影像魅影基準測試"""
     def __init__(self, model_manager):
@@ -60,13 +67,13 @@ class BenchmarkProcessor:
         if times and len(times) > 2:
             cv = statistics.stdev(times) / avg_time
             if cv < 0.03: 
-                stability_factor = 1.05
+                stability_factor = 1.02
             elif cv < 0.05:
-                stability_factor = 1.025
+                stability_factor = 1.01
             elif cv > 0.15: 
-                stability_factor = 0.975
+                stability_factor = 0.99
             elif cv > 0.25: 
-                stability_factor = 0.95
+                stability_factor = 0.98
         adjusted_score = raw_score * stability_factor
         if getattr(self, 'is_cpu_test', False) and is_real_usage:
             adjusted_score *= 1.1
@@ -97,12 +104,15 @@ class BenchmarkProcessor:
         gc.collect()
         if device.type == 'cuda':
             torch.cuda.empty_cache()
+            log_gpu_memory(device, "測試開始前") 
         block_size = self._determine_optimal_block_size(device)
         chunks_x = (width + block_size - 1) // block_size
         chunks_y = (height + block_size - 1) // block_size
         total_chunks = chunks_x * chunks_y
         if step_callback:
             step_callback(f"長門櫻會使用 {chunks_x}x{chunks_y} 的區塊進行測試 (每塊 {block_size}x{block_size})，請稍等一下")
+        if progress_callback:
+            progress_callback(0, iterations)
         test_tensor = torch.randn(1, 3, block_size, block_size, device=device)
         test_tensor = torch.clamp(test_tensor, -1.0, 1.0)
         if use_amp is None and device.type == 'cuda':
@@ -118,20 +128,31 @@ class BenchmarkProcessor:
             self._warmup_model(model, test_tensor, device, use_amp, step_callback, warmup_iterations=3)
         except Exception as e:
             logger.error(f"長門櫻在預熱模型時遇到了困難: {str(e)}")
+            if device.type == 'cuda':
+                test_tensor = None
+                torch.cuda.empty_cache()
+                gc.collect()
+            if progress_callback:
+                progress_callback(0, iterations)
             return {"error": f"模型預熱失敗了，長門櫻很抱歉: {str(e)}"}
         times = []
         warmup_iterations = min(2, iterations // 4) 
         total_start_time = time.time()
+        total_test_iterations = iterations
         try:
             with torch.no_grad():
                 for i in range(iterations + warmup_iterations):
                     if self.stop_flag:
+                        if device.type == 'cuda':
+                            test_tensor = None
+                            torch.cuda.empty_cache()
+                            gc.collect()
                         return {"error": "長門櫻已停止了測試"}
                     if step_callback:
                         if i < warmup_iterations:
                             step_callback(f"長門櫻正在額外預熱模型 ({i+1}/{warmup_iterations})...")
                         else:
-                            step_callback(f"長門櫻正在為主人執行第 {i+1-warmup_iterations}/{iterations} 次測試...")
+                            step_callback(f"長門櫻正在為主人執行第 {i+1-warmup_iterations}/{iterations} 次測試...")   
                     iter_start = time.time()
                     for y in range(chunks_y):
                         for x in range(chunks_x):
@@ -141,22 +162,25 @@ class BenchmarkProcessor:
                             else:
                                 _ = model(test_tensor)
                             if (y * chunks_x + x + 1) % 10 == 0 and device.type == 'cuda':
-                                torch.cuda.synchronize()
+                                torch.cuda.synchronize()  
                     if device.type == 'cuda':
                         torch.cuda.synchronize()
                     iter_time = time.time() - iter_start
                     scaled_time = iter_time * (width * height) / (total_chunks * block_size * block_size)
                     if i >= warmup_iterations:
                         times.append(scaled_time)
-                        if progress_callback:
-                            progress_callback(i+1-warmup_iterations, iterations)
-                    if (i+1) % 3 == 0 and device.type == 'cuda':
-                        torch.cuda.empty_cache()
-                        gc.collect()
+                        current_iteration = i + 1 - warmup_iterations
+                        if progress_callback and current_iteration <= iterations:
+                            progress_callback(current_iteration, iterations)
+                            logger.debug(f"推理進度更新: {current_iteration}/{iterations} ({(current_iteration/iterations)*100:.1f}%)")
         except Exception as e:
             logger.error(f"長門櫻在推理測試時遇到了困難: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
+            if device.type == 'cuda':
+                test_tensor = None
+                torch.cuda.empty_cache()
+                gc.collect()
             return {"error": f"抱歉啊主人~測試失敗了: {str(e)}"}
         total_time = time.time() - total_start_time
         filtered_times = self._remove_outliers(times)
@@ -178,6 +202,14 @@ class BenchmarkProcessor:
         score = self._calculate_performance_score(avg_time, (original_width, original_height), False, filtered_times)
         if step_callback:
             step_callback("長門櫻正在為主人整理測試結果...")
+        if device.type == 'cuda':
+            test_tensor = None
+            torch.cuda.empty_cache()
+            gc.collect()
+            log_gpu_memory(device, "測試結束後")
+        if progress_callback:
+            progress_callback(iterations, iterations)
+            logger.debug("推理測試完成，進度設為100%")
         return {
             "test_type": "模型推理測試",
             "times": times,
@@ -201,7 +233,8 @@ class BenchmarkProcessor:
             "amp_used": use_amp,
             "score": score,
             "block_size": block_size,
-            "total_blocks": total_chunks
+            "total_blocks": total_chunks,
+            "test_completed": True
         }
     
     def run_real_usage_test(self, model, device, width, height, num_images, block_size, overlap,
@@ -213,12 +246,18 @@ class BenchmarkProcessor:
         self.stop_flag = False
         self.is_cpu_test = (device.type == 'cpu')
         warmup_count = 1
+        gc.collect()
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+            log_gpu_memory(device, "實際場景測試開始前")
         if step_callback:
             step_callback("長門櫻正在為主人準備 assets/preview 中的測試圖片...")
         total_images_needed = num_images + warmup_count
         image_files = self._get_test_images(total_images_needed)
         images = []
         if not image_files:
+            if progress_callback:
+                progress_callback(0, 100)
             return {"error": "長門櫻無法從 assets/preview 目錄中找到測試用圖片，請主人確認目錄是否存在並包含圖片"}
         for img_path in image_files:
             try:
@@ -230,26 +269,32 @@ class BenchmarkProcessor:
                 images.append(img)
             except Exception as e:
                 logger.error(f"長門櫻加載圖片 {img_path} 時遇到了困難: {str(e)}")
-                return {"error": f"加載測試圖片失敗了，長門櫻很抱歉: {str(e)}"}
+                if progress_callback:
+                    progress_callback(0, 100)
+                return {"error": f"加載測試圖片失敗了，長門櫻很抱歉: {str(e)}"}  
         if not images:
+            if progress_callback:
+                progress_callback(0, 100)
             return {"error": "長門櫻無法處理任何測試圖片，請主人檢查圖片格式是否正確"}
         if len(images) < total_images_needed:
             logger.warning(f"長門櫻只找到 {len(images)} 張圖片，少於需要的 {total_images_needed} 張")
             while len(images) < total_images_needed:
-                images.append(images[len(images) % len(image_files)])
+                images.append(images[len(images) % len(image_files)])       
         if use_amp is None and device.type == 'cuda':
             use_amp = self._should_use_amp(device)
         else:
-            use_amp = False if device.type != 'cuda' else (use_amp or False)
+            use_amp = False if device.type != 'cuda' else (use_amp or False) 
         start_memory = psutil.virtual_memory().used / (1024 * 1024)  # MB
         gpu_memory_start = 0
         if device.type == 'cuda':
             torch.cuda.reset_peak_memory_stats(device)
             gpu_memory_start = torch.cuda.memory_allocated(device) / (1024 * 1024)  # MB
+        log_gpu_memory(device, "預熱前")
+        test_enhancer = None
         try:
             if step_callback:
                 step_callback("長門櫻正在幫模型預熱中，請主人稍等一下...")
-            enhancer = process_image_in_patches(
+            test_enhancer = process_image_in_patches(
                 model, 
                 images[0], 
                 device, 
@@ -259,44 +304,66 @@ class BenchmarkProcessor:
                 blending_mode='改進型高斯分佈',
                 use_amp=use_amp
             )
-            _ = enhancer.process(lambda x, y: None)
+            _ = test_enhancer.process(lambda x, y: None)
             if device.type == 'cuda':
                 torch.cuda.empty_cache()
-            gc.collect()
+                gc.collect()
             if device.type == 'cuda':
-                _ = enhancer.process(lambda x, y: None)
+                _ = test_enhancer.process(lambda x, y: None)
                 torch.cuda.empty_cache()
                 gc.collect()
         except Exception as e:
             logger.error(f"長門櫻在預熱模型時遇到了困難: {str(e)}")
+            if test_enhancer is not None:
+                if hasattr(test_enhancer, 'cleanup') and callable(test_enhancer.cleanup):
+                    test_enhancer.cleanup()
+                test_enhancer = None
+            if device.type == 'cuda':
+                torch.cuda.empty_cache()
+                gc.collect()
+            if progress_callback:
+                progress_callback(0, 100)
             return {"error": f"模型預熱失敗了，長門櫻很抱歉: {str(e)}"}
+        log_gpu_memory(device, "預熱後")
         times = []
         total_start_time = time.time()
         enhancers = []
         total_blocks = 0
-        processed_blocks = 0
-        for img in images:
+        blocks_per_image = []
+        for img in images[warmup_count:]:
             img_width, img_height = img.size
             step = block_size - overlap
             x_blocks = max(1, (img_width - overlap) // step + (1 if (img_width - overlap) % step != 0 else 0))
             y_blocks = max(1, (img_height - overlap) // step + (1 if (img_height - overlap) % step != 0 else 0))
-            total_blocks += x_blocks * y_blocks
+            img_blocks = x_blocks * y_blocks
+            blocks_per_image.append(img_blocks)
+            total_blocks += img_blocks
+        completed_blocks = 0
+        if progress_callback:
+            progress_callback(0, total_blocks)
+            logger.debug(f"初始化進度條: 0/{total_blocks}")
         try:
             for i, img in enumerate(images):
                 if self.stop_flag:
+                    self._cleanup_enhancers(enhancers, device)
                     return {"error": "主人中止了測試，長門櫻已經停止了"}
                 if step_callback:
                     if i < warmup_count:
                         step_callback(f"長門櫻正在額外預熱模型 ({i+1}/{warmup_count})...")
                     else:
                         step_callback(f"長門櫻正在為主人處理第 {i+1-warmup_count}/{num_images} 張圖片...")
+                blocks_done_in_current_image = 0
+                total_blocks_in_current_image = blocks_per_image[i-warmup_count] if i >= warmup_count else 0
                 def block_progress_callback(blocks_done, total):
-                    nonlocal processed_blocks
-                    processed_blocks = blocks_done
-                    if i > 0:
-                        processed_blocks += sum(enhancer.total_blocks for enhancer in enhancers)
-                    if progress_callback:
-                        progress_callback(processed_blocks, total_blocks)
+                    nonlocal blocks_done_in_current_image
+                    if i >= warmup_count:
+                        delta = blocks_done - blocks_done_in_current_image
+                        if delta > 0: 
+                            blocks_done_in_current_image = blocks_done
+                            global_blocks_done = completed_blocks + blocks_done
+                            if global_blocks_done <= total_blocks and progress_callback:
+                                progress_callback(global_blocks_done, total_blocks)
+                                logger.debug(f"區塊進度更新: {global_blocks_done}/{total_blocks} ({(global_blocks_done/total_blocks)*100:.1f}%)")
                 iter_start = time.time()
                 enhancer = process_image_in_patches(
                     model, 
@@ -315,13 +382,15 @@ class BenchmarkProcessor:
                 iter_time = time.time() - iter_start
                 if i >= warmup_count:
                     times.append(iter_time)
-                if (i+1) % 2 == 0 and device.type == 'cuda':
-                    torch.cuda.empty_cache()
-                    gc.collect() 
+                    completed_blocks += blocks_per_image[i-warmup_count]
+                    if progress_callback:
+                        progress_callback(completed_blocks, total_blocks)
+                        logger.debug(f"圖片 {i+1-warmup_count} 完成，累計進度: {completed_blocks}/{total_blocks} ({(completed_blocks/total_blocks)*100:.1f}%)")
         except Exception as e:
             logger.error(f"長門櫻在實際場景測試時遇到了困難: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
+            self._cleanup_enhancers(enhancers, device)
             return {"error": f"測試失敗了，長門櫻向主人道歉: {str(e)}"}
         total_time = time.time() - total_start_time
         filtered_times = self._remove_outliers(times)
@@ -343,6 +412,11 @@ class BenchmarkProcessor:
         score = self._calculate_performance_score(avg_time, (1280, 640), True, filtered_times)
         if step_callback:
             step_callback("長門櫻正在為主人整理測試結果...")
+        self._cleanup_enhancers(enhancers, device)
+        log_gpu_memory(device, "最終清理後")
+        if progress_callback:
+            progress_callback(total_blocks, total_blocks)
+            logger.debug("實際場景測試完成，進度設為100%")
         return {
             "test_type": "實際場景測試",
             "times": times,
@@ -365,8 +439,41 @@ class BenchmarkProcessor:
             "overlap": overlap,
             "device": device.type,
             "amp_used": use_amp,
-            "score": score
+            "score": score,
+            "total_blocks": total_blocks,
+            "processed_blocks": completed_blocks,
+            "test_completed": True 
         }
+    def _cleanup_enhancers(self, enhancers, device):
+        """清理所有enhancer實例並釋放顯存"""
+        try:
+            if device.type == 'cuda':
+                logger.debug(f"開始清理 {len(enhancers)} 個enhancer實例")
+                log_gpu_memory(device, "清理前")
+                for i in range(len(enhancers)):
+                    if enhancers[i] is None:
+                        continue
+                    if hasattr(enhancers[i], 'cleanup') and callable(enhancers[i].cleanup):
+                        enhancers[i].cleanup()
+                    else:
+                        if hasattr(enhancers[i], 'image_tensor') and enhancers[i].image_tensor is not None:
+                            enhancers[i].image_tensor = None
+                        if hasattr(enhancers[i], 'processor') and enhancers[i].processor is not None:
+                            if hasattr(enhancers[i].processor, 'weight_mask'):
+                                enhancers[i].processor.weight_mask = None
+                            enhancers[i].processor = None
+                    enhancers[i] = None  
+                enhancers.clear()
+                torch.cuda.empty_cache()
+                gc.collect()
+                time.sleep(0.1) 
+                torch.cuda.empty_cache()
+                log_gpu_memory(device, "清理後")
+        except Exception as e:
+            logger.error(f"清理enhancers時出錯: {str(e)}")
+            if device.type == 'cuda':
+                torch.cuda.empty_cache()
+                gc.collect()
     
     def _determine_optimal_block_size(self, device):
         """動態確定最佳區塊大小"""
@@ -376,12 +483,8 @@ class BenchmarkProcessor:
                 total_memory = torch.cuda.get_device_properties(device).total_memory
                 allocated_memory = torch.cuda.memory_allocated(device)
                 free_memory = total_memory - allocated_memory
-                if free_memory > 6 * 1024 * 1024 * 1024: 
+                if free_memory > 1 * 1024 * 1024 * 1024: 
                     block_size = 256
-                elif free_memory > 4 * 1024 * 1024 * 1024:
-                    block_size = 192
-                elif free_memory > 2 * 1024 * 1024 * 1024: 
-                    block_size = 160
                 logger.info(f"長門櫻根據主人的顯存情況（{free_memory / (1024**3):.2f} GB可用）選擇了 {block_size} 的區塊大小")
             except Exception as e:
                 logger.warning(f"長門櫻無法檢測主人的顯存情況，會使用保守的區塊大小: {str(e)}")
@@ -391,12 +494,10 @@ class BenchmarkProcessor:
         """更全面的模型預熱"""
         if step_callback:
             step_callback("長門櫻正在幫模型預熱中，這樣測試會更準確...")
-        
         with torch.no_grad():
             for i in range(warmup_iterations):
                 if i > 0 and step_callback:
                     step_callback(f"長門櫻正在進行第 {i+1}/{warmup_iterations} 次預熱...")
-                
                 if use_amp and device.type == 'cuda':
                     with torch.amp.autocast(device_type='cuda'):
                         _ = model(test_tensor)
@@ -404,6 +505,8 @@ class BenchmarkProcessor:
                     _ = model(test_tensor)
                 if device.type == 'cuda':
                     torch.cuda.synchronize()
+                    if i < warmup_iterations - 1:
+                        torch.cuda.empty_cache()
         if device.type == 'cuda':
             torch.cuda.empty_cache()
         gc.collect()
@@ -465,6 +568,10 @@ class BenchmarkWorker(QThread):
     def run(self):
         """長門櫻會認真執行測試，請主人稍等片刻"""
         try:
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            self.progress_signal.emit(0, 100)
             self.step_signal.emit("長門櫻正在為主人載入模型中...")
             success = self.processor.model_manager.prepare_model_for_inference()
             if not success:
@@ -498,14 +605,26 @@ class BenchmarkWorker(QThread):
                     progress_callback=self.progress_signal.emit,
                     step_callback=self.step_signal.emit
                 )
+            if not self.stop_flag and "error" not in results:
+                self.progress_signal.emit(100, 100)
+                logger.debug("測試完成，進度條設為100%")
             self.finished_signal.emit(results)
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                log_gpu_memory(self.device, "測試完成後最終清理")
         except Exception as e:
             logger.error(f"長門櫻在執行基準測試時遇到了困難: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
             self.finished_signal.emit({"error": f"測試失敗了，長門櫻向主人道歉: {str(e)}"})
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
     
     def stop(self):
         """長門櫻會立即停止測試，隨時聽從主人的指示"""
         self.processor.stop()
         self.stop_flag = True
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()

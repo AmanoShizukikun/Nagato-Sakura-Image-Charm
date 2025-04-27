@@ -103,7 +103,7 @@ class ModelManager(QObject):
     def _create_default_models_file(self):
         """創建默認的模型數據文件"""
         default_data = {
-            "version": "1.0.1",
+            "version": "1.1.0",
             "last_updated": datetime.now().strftime("%Y-%m-%d"),
             "models": {
                 "NS-IC-Kyouka": {
@@ -135,9 +135,19 @@ class ModelManager(QObject):
                     "category": "動畫",
                     "added_date": "2025-04-21",
                     "author": "天野靜樹"
+                },
+                "NS-IC-Kyouka-MQ": {
+                    "name": "Ritsuka-HQ -《斷律・映格輪廻》",
+                    "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/download/model-space/NS-IC-Ritsuka-HQ-v7-314.pth",
+                    "description": "格狀的影塊，是序斷的殘響。在光與影的律動中，復甦真實之形。",
+                    "details": "處理最高4格等寬動畫圖像的 pixel block 所造成的格子馬賽克效果，重構色塊邊界與失落邊緣資訊。\n\n- 版本：v7.31\n- 訓練樣本數： 10K\n- 檔案大小：約 73.5 MB\n- 適用場景：動漫馬賽克還原",
+                    "preview": "assets/model_previews/Ritsuka-HQ.png",
+                    "category": "馬賽克",
+                    "added_date": "2025-04-27",
+                    "author": "天野靜樹"
                 }
             },
-            "categories": ["動畫","寫實"],
+            "categories": ["動畫","寫實","馬賽克"],
             "remote_update_url": "https://raw.githubusercontent.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/main/config/models_data.json"
         }
           
@@ -592,11 +602,11 @@ class ModelManager(QObject):
             self.scan_models_directory()
             self.model_imported_signal.emit(target_path)
             logger.info(f"成功匯入模型: {filename}")
-            return True, f"成功匯入模型: {filename}"
+            return True, target_path 
         except Exception as e:
             logger.error(f"匯入模型失敗: {str(e)}")
             return False, f"匯入模型失敗: {str(e)}"
-    
+        
     def delete_model(self, model_path):
         """從模型目錄中刪除模型"""
         try:

@@ -3,6 +3,7 @@ import sys
 import time
 import cv2
 import logging
+import torch
 from PIL import Image
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
                             QFileDialog, QProgressBar, QComboBox, QSpinBox, QCheckBox, 
@@ -14,6 +15,8 @@ from PyQt6.QtGui import QIcon, QFont, QIntValidator
 
 from src.ui.views import MultiViewWidget
 from src.threads.NS_VideoThread import VideoEnhancerThread
+
+from src.utils.NS_DeviceInfo import get_system_info, get_device_options, get_device_name
 
 
 logger = logging.getLogger(__name__)
@@ -30,17 +33,14 @@ class CollapsibleBox(QWidget):
         self.toggle_button.setText(title)
         self.toggle_button.setStyleSheet("QToolButton { font-weight: bold; }")
         self.toggle_button.setIconSize(QSize(14, 14))
-        
         self.content_area = QScrollArea()
         self.content_area.setFrameShape(QFrame.Shape.NoFrame)
         self.content_area.setWidgetResizable(True)
-        
         lay = QVBoxLayout(self)
         lay.setSpacing(0)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.toggle_button)
         lay.addWidget(self.content_area)
-        
         self.toggle_button.clicked.connect(self.on_toggle)
         self.content_frame = QFrame()
         self.content_layout = QVBoxLayout()
@@ -67,6 +67,7 @@ class VideoProcessingTab(QWidget):
         self.parent = parent
         self.input_video_path = None
         self.original_video_size = (0, 0)
+        self.system_info = get_system_info()
         self.setup_ui()
         self.current_frame_index = 0
         self.frame_cache = {}  
@@ -268,7 +269,6 @@ class VideoProcessingTab(QWidget):
         # === 影片參數區塊 ===
         video_param_box = CollapsibleBox("影片尺寸與編碼")
         video_param_layout = QVBoxLayout()
-        # --- 輸出尺寸選項 ---
         output_size_box = QGroupBox("輸出尺寸設定")
         output_size_layout = QVBoxLayout(output_size_box)
         output_size_layout.setContentsMargins(6, 6, 6, 6)
@@ -299,7 +299,6 @@ class VideoProcessingTab(QWidget):
         self.scale_size_info_label = QLabel("輸出尺寸: -- x -- 像素")
         upscale_option_layout.addWidget(self.scale_size_info_label)
         output_size_layout.addLayout(upscale_option_layout)
-        # 自訂尺寸控制
         custom_size_option_layout = QHBoxLayout()
         custom_size_option_layout.setContentsMargins(20, 0, 0, 0)
         custom_size_option_layout.addWidget(QLabel("寬度:"))
@@ -316,14 +315,12 @@ class VideoProcessingTab(QWidget):
         custom_size_option_layout.addWidget(self.custom_size_info_label)
         output_size_layout.addLayout(custom_size_option_layout)
         video_param_layout.addWidget(output_size_box)
-        # -- 影片裁切方式 --
         crop_layout = QHBoxLayout()
         crop_layout.addWidget(QLabel("裁切方式:"))
         self.crop_combo = QComboBox()
         self.crop_combo.addItems(['無裁切', '居中裁切', '智能裁切'])
         crop_layout.addWidget(self.crop_combo)
         video_param_layout.addLayout(crop_layout)
-        # -- 編碼器設定 --
         codec_type_layout = QHBoxLayout()
         codec_type_layout.addWidget(QLabel("編碼器類型:"))
         self.codec_type_combo = QComboBox()
@@ -337,7 +334,6 @@ class VideoProcessingTab(QWidget):
         encoder_layout.addWidget(self.encoder_combo)
         video_param_layout.addLayout(encoder_layout)
         self.update_encoder_options("H.264")
-        # -- 碼率控制 --
         rate_control_layout = QVBoxLayout()
         rate_control_group_layout = QHBoxLayout()
         rate_control_label = QLabel("碼率控制:")
@@ -383,7 +379,6 @@ class VideoProcessingTab(QWidget):
         )
         rate_control_layout.addWidget(self.rate_control_stack)
         video_param_layout.addLayout(rate_control_layout)
-        # -- 聲音設定 --
         audio_layout = QVBoxLayout()
         audio_label = QLabel("聲音設定:")
         audio_label.setMinimumWidth(70)
@@ -464,6 +459,15 @@ class VideoProcessingTab(QWidget):
         self.priority_combo.setToolTip("設置處理線程的優先級")
         priority_layout.addWidget(self.priority_combo)
         processing_options_layout.addLayout(priority_layout)
+        device_layout = QHBoxLayout()
+        device_layout.addWidget(QLabel("計算設備:"))
+        self.device_combo = QComboBox()
+        device_options = get_device_options(self.system_info)
+        for display_text, device_value in device_options:
+            self.device_combo.addItem(display_text, device_value)
+        self.device_combo.setToolTip("自動選擇: 使用系統默認設備\nCUDA: 使用GPU處理（較快）\nCPU: 使用CPU處理（較穩定但較慢）")
+        device_layout.addWidget(self.device_combo)
+        processing_options_layout.addLayout(device_layout)
         amp_layout = QHBoxLayout()
         amp_layout.addWidget(QLabel("混合精度:"))
         self.amp_combo = QComboBox()
@@ -499,16 +503,12 @@ class VideoProcessingTab(QWidget):
                 'x264 (CPU)', 
                 'x264 10-bit (CPU)', 
                 'NVENC (NVIDIA GPU)',
-                'QuickSync (Intel GPU)', 
-                'AMF (AMD GPU)'
             ])
         elif codec_type == 'H.265/HEVC':
             self.encoder_combo.addItems([
                 'x265 (CPU)', 
                 'x265 10-bit (CPU)', 
                 'NVENC HEVC (NVIDIA GPU)',
-                'QuickSync HEVC (Intel GPU)', 
-                'AMF HEVC (AMD GPU)'
             ])
         elif codec_type == 'VP9':
             self.encoder_combo.addItems([
@@ -609,6 +609,19 @@ class VideoProcessingTab(QWidget):
             self.model_status_label.setText(f"模型狀態: 已載入 {model_name}")
             if self.parent:
                 self.parent.statusBar.showMessage(f"模型已載入: {model_name}，開始處理影片...")
+            device_selection = self.device_combo.currentData()
+            if device_selection == "auto":
+                device = self.model_manager.get_device()
+                self.used_device_name = "自動選擇"
+                if device.type == "cuda":
+                    self.used_device_name = f"自動選擇 - {get_device_name(device, self.system_info)}"
+                else:
+                    self.used_device_name = f"自動選擇 - {self.system_info.get('cpu_brand_model', 'CPU')} (CPU)"
+                logger.info(f"使用自動選擇的設備: {device}, {self.used_device_name}")
+            else:
+                device = torch.device(device_selection)
+                self.used_device_name = self.device_combo.currentText()
+                logger.info(f"使用手動選擇的設備: {device}, {self.used_device_name}")
             block_size = self.vid_block_size_spin.value()
             overlap = self.vid_overlap_spin.value()
             use_weight_mask = self.vid_weight_mask_check.isChecked()
@@ -619,7 +632,6 @@ class VideoProcessingTab(QWidget):
             sync_preview = self.sync_preview_check.isChecked()
             preview_interval = self.preview_interval_spin.value()
             clean_temp_files = self.clean_temp_check.isChecked()
-            # 尺寸設定
             if self.original_size_radio.isChecked():
                 resolution = '原始大小'
                 scale_factor = 1.0
@@ -658,6 +670,7 @@ class VideoProcessingTab(QWidget):
                 logger.info("使用強制禁用的混合精度計算模式")
             else:
                 logger.info("使用自動偵測的混合精度計算模式")
+            logger.info(f"使用設備: {get_device_name(device, self.system_info)}")
             video_options = {
                 'resolution': resolution,
                 'scale_factor': scale_factor,
@@ -680,7 +693,7 @@ class VideoProcessingTab(QWidget):
                 model,
                 self.input_video_path,
                 output_path,
-                self.model_manager.get_device(),
+                device, 
                 block_size,
                 overlap,
                 use_weight_mask,
@@ -716,17 +729,11 @@ class VideoProcessingTab(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
-                self.vid_status_label.setText("正在停止處理，請稍候...")
                 self.video_enhancer_thread.stop()
-                self.vid_status_label.setText("使用者已中止處理。")
                 self.enable_video_ui()
-                try:
-                    self.model_manager.clear_cache()
-                    self.model_status_label.setText("模型狀態: 已卸載")
-                    logger.info("處理終止後已卸載模型")
-                except Exception as e:
-                    logger.error(f"卸載模型時出錯: {str(e)}")
-                    self.model_status_label.setText("模型狀態: 卸載失敗")
+                self.vid_status_label.setText("處理已取消。")
+                self.model_manager.clear_cache()
+                self.model_status_label.setText("模型狀態: 已卸載")
     
     def enable_video_ui(self):
         self.enhance_video_button.setEnabled(True)
@@ -753,29 +760,34 @@ class VideoProcessingTab(QWidget):
         except Exception as e:
             logger.error(f"卸載模型時出錯: {str(e)}")
             self.model_status_label.setText("模型狀態: 卸載失敗")
-        if output_path: 
+        if output_path:
             input_cap = cv2.VideoCapture(self.input_video_path)
             frame_count = int(input_cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = int(input_cap.get(cv2.CAP_PROP_FPS))
             input_cap.release()
             duration = frame_count / fps if fps > 0 else 0
             processing_speed = duration / elapsed_time if elapsed_time > 0 else 0
-            self.vid_status_label.setText(f"影片處理完成！耗時: {elapsed_time:.2f} 秒")
+            device_info = ""
+            if hasattr(self, 'used_device_name') and self.used_device_name:
+                device_info = f", 設備: {self.used_device_name}"
+            amp_info = ""
+            if self.amp_combo.currentText() != '自動偵測':
+                amp_info = f", 混合精度: {self.amp_combo.currentText()}"
+            self.vid_status_label.setText(f"影片處理完成！耗時: {elapsed_time:.2f} 秒{device_info}{amp_info}")
             self.vid_remaining_label.setText(f"處理速度: {processing_speed:.2f}x")
             if self.parent:
-                self.parent.statusBar.showMessage(f"影片增強完成。輸出到: {output_path}")
+                self.parent.statusBar.showMessage(f"影片處理完成。耗時: {elapsed_time:.2f} 秒，處理速度: {processing_speed:.2f}x")
             reply = QMessageBox.question(
                 self, "處理完成", 
                 f"影片處理已完成！\n"
                 f"總耗時: {elapsed_time:.2f} 秒\n"
-                f"處理速度: {processing_speed:.2f}x\n"
+                f"處理速度: {processing_speed:.2f}x{device_info}{amp_info}\n"
                 f"是否開啟輸出位置？", 
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
-                output_dir = os.path.dirname(output_path)
-                if sys.platform == 'win32':
-                    os.startfile(output_dir)
+                output_dir = os.path.dirname(os.path.abspath(output_path))
+                os.startfile(output_dir)
         else:
             self.vid_status_label.setText("影片處理失敗。")
     
@@ -787,24 +799,20 @@ class VideoProcessingTab(QWidget):
         try:
             cap = cv2.VideoCapture(self.input_video_path)
             if not cap.isOpened():
-                logger.error(f"無法開啟視頻: {self.input_video_path}")
                 return None
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_index)
             ret, frame = cap.read()
             cap.release()
             if ret:
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                original_frame = Image.fromarray(frame_rgb)
-                if len(self.frame_cache) > 10:  
-                    oldest_key = list(self.frame_cache.keys())[0]
-                    del self.frame_cache[oldest_key]
-                self.frame_cache[frame_index] = original_frame
-                return original_frame
+                pil_image = Image.fromarray(frame_rgb)
+                self.frame_cache[frame_index] = pil_image
+                return pil_image
             else:
-                logger.warning(f"無法讀取視頻幀: {frame_index}")
+                return None
         except Exception as e:
             logger.error(f"獲取視頻幀時出錯: {str(e)}")
-        return None
+            return None
 
     def display_enhanced_frame(self, enhanced_frame, frame_index=None):
         if frame_index is not None and self.sync_preview_check.isChecked():

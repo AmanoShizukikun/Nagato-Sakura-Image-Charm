@@ -4,9 +4,7 @@ import time
 import torch
 import psutil
 import numpy as np
-import cpuinfo
 import logging
-import winreg
 import pyqtgraph as pg
 from datetime import datetime
 from PyQt6.QtWidgets import (
@@ -20,6 +18,7 @@ from PyQt6.QtGui import QGuiApplication, QFont, QIcon
 
 from src.ui.main_window import ImageEnhancerApp
 from src.processing.NS_Benchmark import BenchmarkProcessor, BenchmarkWorker
+from src.utils.NS_DeviceInfo import get_system_info, get_device_options, get_device_name
 
 
 logger = logging.getLogger(__name__)
@@ -207,6 +206,8 @@ class BenchmarkDialog(QDialog):
         self.benchmark_processor = BenchmarkProcessor(self.model_manager)
         self.benchmark_worker = None
         self.results = {}
+        self.system_info = get_system_info()
+        self.expected_iterations = 0 
         self.setWindowTitle("基準測試")
         self.setMinimumWidth(980)
         self.setMinimumHeight(720)
@@ -280,7 +281,7 @@ class BenchmarkDialog(QDialog):
         subtitle = QLabel("長門櫻會幫主人評估系統處理圖像時的性能，並提供詳細的分析報告")
         subtitle.setStyleSheet("color: #b0b8c1; font-size: 11.5pt;")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        version = QLabel(f"版本: {ImageEnhancerApp.version}")
+        version = QLabel(f"版本: {self.system_info['app_version'] if 'app_version' in self.system_info else ImageEnhancerApp.version}")
         version.setStyleSheet("color: #888; font-size: 10pt;")
         version.setAlignment(Qt.AlignmentFlag.AlignLeft)
         main_layout.addWidget(title)
@@ -350,10 +351,9 @@ class BenchmarkDialog(QDialog):
         form_layout.setHorizontalSpacing(18)
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self.device_combo = QComboBox()
-        self.device_combo.addItem("自動選擇", "auto")
-        if torch.cuda.is_available():
-            self.device_combo.addItem("CUDA (GPU)", "cuda")
-        self.device_combo.addItem("CPU", "cpu")
+        device_options = get_device_options(self.system_info)
+        for display_text, device_value in device_options:
+            self.device_combo.addItem(display_text, device_value)
         form_layout.addRow("計算設備：", self.device_combo)
         self.amp_combo = QComboBox()
         self.amp_combo.addItems(["自動偵測", "強制啟用", "強制禁用"])
@@ -451,91 +451,36 @@ class BenchmarkDialog(QDialog):
         self.iter_widget.setVisible(not is_real_usage)
         self.image_widget.setVisible(is_real_usage)
         self.block_widget.setEnabled(is_real_usage)
-        if hasattr(self, 'is_low_memory_gpu') and self.is_low_memory_gpu:
+        if self.system_info.get('is_low_memory_gpu', False):
             if not is_real_usage:
                 self.memory_warning.setText("長門櫻提醒主人：低顯存環境下，模型推理測試可能會導致失敗，建議使用實際場景測試")
             else:
-                self.memory_warning.setText(f"長門櫻已為主人啟動低顯存模式 ({self.total_gpu_memory:.2f} GB)，並自動調整了參數")
+                self.memory_warning.setText(f"長門櫻已為主人啟動低顯存模式 ({self.system_info.get('total_gpu_memory', 0):.2f} GB)，並自動調整了參數")
         else:
             self.memory_warning.setText("")
 
     def populateSystemInfo(self):
+        """使用已收集的系統資訊填充系統信息卡片"""
         try:
-            system = platform.system()
-            architecture = platform.architecture()[0]
-            os_info = f"{system} {platform.release()} {architecture}"
-            if system == "Windows":
-                try:
-                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion") as key:
-                        build_number = int(winreg.QueryValueEx(key, "CurrentBuildNumber")[0])
-                        product_name = winreg.QueryValueEx(key, "ProductName")[0]
-                        windows_version = "11" if build_number >= 22000 else "10"
-                        os_info = f"{product_name} ({windows_version} Build {build_number}) {architecture}"
-                except Exception as e:
-                    logger.warning(f"長門櫻無法從註冊表獲取 Windows 版本: {str(e)}")
-            self.system_card.setValue("os", os_info)
-            try:
-                cpu_info_dict = cpuinfo.get_cpu_info()
-                cpu_brand = cpu_info_dict.get('brand_raw', platform.processor() or "未知 CPU")
-            except Exception:
-                cpu_brand = platform.processor() or "未知 CPU"
-            cpu_count = psutil.cpu_count(logical=True)
-            physical_cpu_count = psutil.cpu_count(logical=False)
-            cpu_info = f"{cpu_brand} ({physical_cpu_count} 核心, {cpu_count} 執行緒)"
-            self.system_card.setValue("cpu", cpu_info)
-            total_memory = psutil.virtual_memory().total / (1024 * 1024 * 1024)
-            available_memory = psutil.virtual_memory().available / (1024 * 1024 * 1024)
-            memory_info = f"{total_memory:.2f} GB"
-            self.system_card.setValue("memory", memory_info)
-            if torch.cuda.is_available():
-                gpu_name = torch.cuda.get_device_name(0)
-                compute_capability = torch.cuda.get_device_capability(0)
-                gpu_info = f"{gpu_name} (CC {compute_capability[0]}.{compute_capability[1]})"
-                self.system_card.setValue("gpu", gpu_info)
-                total_gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                allocated = torch.cuda.memory_allocated() / (1024**3)
-                gpu_memory_info = f"{total_gpu_mem:.2f} GB (已分配 {allocated:.2f} GB)"
-                try:
-                    import pynvml
-                    pynvml.nvmlInit()
-                    handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-                    mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                    total_gpu_mem_nv = mem_info.total / (1024**3)
-                    used_gpu_mem = mem_info.used / (1024**3)
-                    gpu_memory_info = f"{total_gpu_mem_nv:.2f} GB"
-                    pynvml.nvmlShutdown()
-                except (ImportError, Exception):
-                    pass
-                self.system_card.setValue("gpu_memory", gpu_memory_info)
-            else:
-                self.system_card.setValue("gpu", "長門櫻未檢測到支援的顯示卡")
-                self.system_card.setValue("gpu_memory", "不適用")
-            self.system_card.setValue("version", ImageEnhancerApp.version)
-            self.system_card.setValue("pytorch", torch.__version__)
+            self.system_card.setValue("os", self.system_info.get('os', "未知作業系統"))
+            self.system_card.setValue("cpu", self.system_info.get('cpu_info', "未知 CPU"))
+            self.system_card.setValue("memory", self.system_info.get('memory_info', "未知記憶體"))
+            self.system_card.setValue("gpu", self.system_info.get('gpu_info', "未檢測到GPU"))
+            self.system_card.setValue("gpu_memory", self.system_info.get('gpu_memory_info', "不適用"))
+            self.system_card.setValue("version", self.system_info.get('app_version', ImageEnhancerApp.version))
+            self.system_card.setValue("pytorch", self.system_info.get('pytorch_version', "未知"))
         except Exception as e:
-            logger.error(f"長門櫻在獲取系統資訊時遇到困難: {str(e)}")
+            logger.error(f"長門櫻在填充系統資訊時遇到困難: {str(e)}")
             for key in ["os", "cpu", "memory", "gpu", "gpu_memory"]:
                 self.system_card.setValue(key, "長門櫻讀取失敗")
 
     def checkMemoryAvailability(self):
-        if not torch.cuda.is_available():
+        """檢查顯存可用性並調整參數，使用已收集的系統資訊"""
+        if not self.system_info.get('has_cuda', False):
             return
         try:
-            total_memory = 0
-            try:
-                import pynvml
-                pynvml.nvmlInit()
-                handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-                gpu_memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                total_memory = gpu_memory.total / (1024 * 1024 * 1024)
-                pynvml.nvmlShutdown()
-            except (ImportError, Exception) as e:
-                logger.warning(f"長門櫻無法使用 pynvml 獲取顯存資訊: {str(e)}")
-                total_memory = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024 * 1024)
-            self.total_gpu_memory = total_memory
-            if total_memory < 3:
-                self.is_low_memory_gpu = True
-                warning_text = f"長門櫻發現主人的顯卡只有 {total_memory:.2f} GB 顯存，已自動為主人您調整參數以適應您的設備"
+            if self.system_info.get('is_low_memory_gpu', False):
+                warning_text = f"長門櫻發現主人的顯卡只有 {self.system_info.get('total_gpu_memory', 0):.2f} GB 顯存，已自動為主人您調整參數以適應您的設備"
                 self.memory_warning.setText(warning_text)
                 self.test_mode_combo.setCurrentText("實際場景測試")
                 if self.block_size_spin.value() > 192:
@@ -544,8 +489,6 @@ class BenchmarkDialog(QDialog):
                     self.overlap_spin.setValue(32)
                 if self.num_images_spin.value() > 5:
                     self.num_images_spin.setValue(5)
-            else:
-                self.is_low_memory_gpu = False
         except Exception as e:
             logger.error(f"長門櫻在檢查顯存時出錯: {str(e)}")
         finally:
@@ -568,12 +511,13 @@ class BenchmarkDialog(QDialog):
             is_real_usage = self.test_mode_combo.currentText() == "實際場景測試"
             iterations = self.iterations_spin.value()
             num_images = self.num_images_spin.value()
+            self.expected_iterations = num_images if is_real_usage else iterations
             block_size = self.block_size_spin.value()
             overlap = self.overlap_spin.value()
-            if device.type == 'cuda' and hasattr(self, 'is_low_memory_gpu') and self.is_low_memory_gpu and not is_real_usage:
+            if device.type == 'cuda' and self.system_info.get('is_low_memory_gpu', False) and not is_real_usage:
                 reply = QMessageBox.warning(
                     self, "長門櫻的顯存警告",
-                    f"主人~您的顯卡只有 {self.total_gpu_memory:.2f} GB 顯存，在「模型推理測試」模式下可能會失敗\n\n長門櫻建議主人使用「實際場景測試」\n\n主人確定要繼續嗎？",
+                    f"主人~您的顯卡只有 {self.system_info.get('total_gpu_memory', 0):.2f} GB 顯存，在「模型推理測試」模式下可能會失敗\n\n長門櫻建議主人使用「實際場景測試」\n\n主人確定要繼續嗎？",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No
                 )
@@ -605,6 +549,7 @@ class BenchmarkDialog(QDialog):
             self.benchmark_worker.start()
         except Exception as e:
             QMessageBox.critical(self, "長門櫻報告錯誤", f"長門櫻在執行基準測試時遇到困難: {str(e)}")
+            logger.error(f"執行基準測試時發生錯誤: {str(e)}", exc_info=True)
             self.start_button.setEnabled(True)
             self.start_button.setText("開始測試")
             self.stop_button.setEnabled(False)
@@ -620,6 +565,7 @@ class BenchmarkDialog(QDialog):
         if total > 0:
             progress_percent = int(current / total * 100)
             self.progress_bar.setValue(progress_percent)
+            logger.debug(f"進度條設置為: {progress_percent}% (當前={current}, 總計={total})")
         else:
             self.progress_bar.setValue(0)
 
@@ -627,16 +573,28 @@ class BenchmarkDialog(QDialog):
         self.status_label.setText(message)
 
     def onBenchmarkFinished(self, results):
+        """處理基準測試完成後的操作，並確保進度條準確反映測試完成狀態"""
         self.start_button.setEnabled(True)
         self.start_button.setText("開始測試")
         self.stop_button.setEnabled(False)
         self.close_button.setEnabled(True)
-        self.progress_bar.setValue(100 if "error" not in results else 0)
         if "error" in results:
+            self.progress_bar.setValue(0)
             error_msg = f"長門櫻測試失敗: {results['error']}"
             QMessageBox.critical(self, "長門櫻報告錯誤", error_msg)
             self.status_label.setText(error_msg)
             return
+        is_real_usage = self.test_mode_combo.currentText() == "實際場景測試"
+        expected_iterations = self.expected_iterations
+        actual_iterations = len(results.get("times", []))
+        logger.debug(f"測試完成檢查: 預期迭代={expected_iterations}, 實際完成={actual_iterations}")
+        if actual_iterations >= expected_iterations * 0.9:
+            self.progress_bar.setValue(100)
+            logger.debug("進度條設置為100% - 測試完全完成")
+        else:
+            completion_percentage = int((actual_iterations / max(1, expected_iterations)) * 100)
+            self.progress_bar.setValue(min(99, completion_percentage))
+            logger.warning(f"長門櫻發現測試可能未完全完成：預期 {expected_iterations} 次，實際執行 {actual_iterations} 次")
         self.results = results
         self.displayResults()
         self.copy_button.setEnabled(True)
@@ -665,12 +623,13 @@ class BenchmarkDialog(QDialog):
         if not self.results:
             self.details_info.setText("抱歉啊主人~長門櫻還沒有可以呈現的結果")
             return
-        device_name = "CPU"
-        if str(self.results.get("device", "")) == "cuda":
-            try:
-                device_name = f"GPU ({torch.cuda.get_device_name(0)})"
-            except:
-                device_name = "GPU (未知型號)"
+        device_name = "未知設備"
+        device_type = str(self.results.get("device", ""))
+        if device_type == "cpu":
+            device_name = f"{self.system_info.get('cpu_brand_model', '未知處理器')} (CPU)"
+        elif device_type.startswith("cuda"):
+            device = torch.device(device_type)
+            device_name = get_device_name(device, self.system_info)
         times = self.results.get("times", [])
         min_time = min(times) if times else 0
         max_time = max(times) if times else 0
@@ -683,15 +642,15 @@ class BenchmarkDialog(QDialog):
 測試時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 建構資訊:
-  程式版本: {ImageEnhancerApp.version}
-  PyTorch 版本: {torch.__version__}
+  程式版本: {self.system_info.get('app_version', 'N/A')}
+  PyTorch 版本: {self.system_info.get('pytorch_version', 'N/A')}
 
 主人的系統資訊:
-  作業系統: {self.system_card.items["os"].text()}
-  處理器: {self.system_card.items["cpu"].text()}
-  記憶體: {self.system_card.items["memory"].text()}
-  顯示卡: {self.system_card.items["gpu"].text()}
-  顯示記憶體: {self.system_card.items["gpu_memory"].text()}
+  作業系統: {self.system_info.get('os', '未知作業系統')}
+  處理器: {self.system_info.get('cpu_info', '未知處理器')}
+  記憶體: {self.system_info.get('memory_info', '未知記憶體')}
+  顯示卡: {self.system_info.get('gpu_info', '未檢測到GPU')}
+  顯示記憶體: {self.system_info.get('gpu_memory_info', '不適用')}
 
 處理設定:
   計算設備: {device_name}
@@ -719,6 +678,7 @@ class BenchmarkDialog(QDialog):
 記憶體使用統計:
   記憶體變化: {self.results.get('memory_delta', 0):.2f} MB
   顯存變化: {self.results.get('gpu_memory_delta', 0):.2f} MB
+  峰值顯存使用: {self.results.get('peak_memory_usage', 0):.2f} MB
 """
         self.details_info.setText(summary.strip())
 
@@ -738,6 +698,8 @@ class BenchmarkDialog(QDialog):
                 QMessageBox.StandardButton.No)
             if reply == QMessageBox.StandardButton.Yes:
                 self.stopBenchmark()
+                if self.benchmark_worker.isRunning():
+                    self.benchmark_worker.wait(1000) 
                 event.accept()
             else:
                 event.ignore()

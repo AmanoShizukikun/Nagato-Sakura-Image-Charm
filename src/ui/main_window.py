@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # --- 主應用程式類別 ---
 class ImageEnhancerApp(QMainWindow):
-    version = "1.0.2"
+    version = "1.1.0"
     def __init__(self):
         super().__init__()
         self.about_clicks = 0 
@@ -44,17 +44,12 @@ class ImageEnhancerApp(QMainWindow):
 
     def check_models_after_ui_shown(self):
         """在UI顯示後檢查模型並註冊預設模型，但不立即載入"""
+
         if not self.model_manager.has_models():
             self.no_models_found()
         else:
-            success = self.model_manager.register_default_model()
-            if success:
-                model_path = self.model_manager.get_registered_model_path()
-                model_name = os.path.basename(model_path) if model_path else "未知模型"
-                self.statusBar.showMessage(f"使用設備: {self.device} | 已選擇模型: {model_name}")
-                logger.info(f"已選擇模型: {model_name}")
-            else:
-                self.statusBar.showMessage(f"警告：模型註冊失敗，請從模型選單中選擇模型")
+            self.model_manager.register_default_model()
+            self.statusBar.showMessage(f"已註冊預設模型", 3000)
         self.reload_all_tabs_models()
 
     def init_model_manager(self):
@@ -116,7 +111,6 @@ class ImageEnhancerApp(QMainWindow):
         """處理模型下載完成事件"""
         if model_path:
             model_name = os.path.basename(model_path)
-            QMessageBox.information(self, "下載完成", f"模型 {model_name} 已下載成功！")
             self.refresh_models()
             reply = QMessageBox.question(
                 self, "使用新模型",
@@ -180,10 +174,15 @@ class ImageEnhancerApp(QMainWindow):
 
     def reload_all_tabs_models(self):
         """重新載入所有分頁的模型列表"""
+        self.model_manager.scan_models_directory()
+        
         tabs = [self.image_tab, self.video_tab, self.training_tab, self.assessment_tab]
         for tab in tabs:
-            if hasattr(tab, "reload_models"):
-                tab.reload_models()
+            if hasattr(tab, 'reload_models'):
+                try:
+                    tab.reload_models()
+                except Exception as e:
+                    logger.error(f"重新載入分頁模型時出錯: {str(e)}")
 
     def notify_tabs_model_changed(self, model):
         """通知各分頁模型已變更"""
