@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 # --- 主應用程式類別 ---
 class ImageEnhancerApp(QMainWindow):
-    version = "1.1.0"
+    version = "1.1.1"
     def __init__(self):
         super().__init__()
         self.about_clicks = 0 

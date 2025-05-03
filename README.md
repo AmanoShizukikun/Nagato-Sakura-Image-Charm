@@ -10,21 +10,34 @@
 「長門櫻-影像魅影」是「長門櫻計畫」的衍生品，是以「長門櫻」的影像核心為基底衍生出的圖形化的影像增強與評估工具，支援 AI 超分辨率、圖片及影片增強、品質評估等功能。
 
 ## 公告
-- 由於訓練模型導致當前算力短缺，將不再及時更新小版本的預覽圖以及程式的版本號，將在日後的更新慢慢補上。
+由於算力短缺加上開發者最近相較忙碌，將在1.1.1版本後會暫緩長門櫻-影像魅影的開發，優先完成長門櫻-影像魅影訓練器相關的倉庫以及 Discord 版的 cog。
 
 ## 近期變動
+### 1.1.1 (2025 年 5 月 04 日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.1.jpg)
+### 重要變更
+- 【重大】完全重寫了 AI 影像評分核心的模型架構，棄用了龐大的 Transformer 模型改回傳統的 CNN 模型，並對模型架構進行了輕量化處理。
+### 新增功能
+- 【新增】評估頁面添加邊緣比較功能，能透過 OpenCV Canny 畫出圖像邊緣進行兩張圖的比較。
+- 【更新】評估頁面更新 UI 版面，原本下方預覽框由滾動框改為操作更加自由的 views.py 型式。
+- 【更新】優化了 Ritsuka-HQ 的模型描述。
+- 【修復】AI 影像評分，全面改寫了模型，現在只需要 1MB 左右的空間就能做到不錯的AI評分效果。
+### 已知問題
+- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
+- 【錯誤】擴充插件管理功能未完成，目前 1.1.1 版本將強制預裝 Nagato-Sakura-Image-Quality-Assessment 影像評分功能 (約1MB)。
+
 ### 1.1.0 (2025 年 4 月 28 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.0.jpg)
 ### 重要變更
 - 【重大】計算設備選擇功能，現在可以手動強制開啟CPU來進行圖像、影像處理。
 ### 新增功能
-- 【新增】Ritsuka-HQ 第七代馬賽克還原模型。
+- 【新增】Ritsuka-HQ 第七代動漫馬賽克還原模型。
 - 【更新】優化基準測試的平衡性並調整記憶體的調用策略及改良顯存調用策略及優化進度條準確度。
 - 【更新】計算設備選擇能直接看到 CPU 及 NVIDIA GPU 的型號方便多設備切換。 (新增 NS_DeviceInfo.py)
 - 【修復】在沒有模型的時候匯入外部模型後註冊卻無法使用模型的問題。
 - 【修復】切換基準測試會導致顯存未成功釋放的問題。
 ### 已知問題
-- 【錯誤】影像評估核心尚未完成，導致評估錯誤。
+- 【錯誤】影像評估核心尚未完成，導致評估錯誤。 (1.1.0 已修正)
 - 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
 
 ### 1.0.2 (2025 年 4 月 25 日)
@@ -37,56 +50,10 @@
 - 【修復】基準測試現在能正確顯示 CPU 的型號。
 - 【修復】調整不同分塊大小運行模型後沒有成功卸載模型的問題。
 ### 已知問題
-- 【錯誤】影像評估核心尚未完成，導致評估錯誤。
+- 【錯誤】影像評估核心尚未完成，導致評估錯誤。 (1.1.0 已修正)
 - 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
 - 【錯誤】在沒有模型的時候匯入外部模型後註冊卻無法使用模型的問題。 (1.1.0 已修正)
 - 【修復】切換基準測試會導致顯存未成功釋放。 (1.1.0 已修正)
-
-### 1.0.1 (2025 年 4 月 22 日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.1.jpg)
-### 重要變更
-- 【重大】調整了模型的存取機制。
-### 新增功能
-- 【新增】超分辨率功能，現在圖像和影像都可以進行超分辨率功能。
-- 【新增】模型處理強度，可以調整處理強度最佳化圖片。
-- 【新增】混和精度調整，可以強制開啟或關閉混和精度。
-- 【新增】基準測試功能，可以評估電腦的性能。
-- 【新增】長門櫻的彩蛋功能，還請用戶自行探索。
-- 【更新】下載頁面圖像預覽的動畫效果，並添加手勢操作及變色提示。
-- 【更新】圖片處理 GUI 和 評估頁面 GUI，採用影片處理的伸縮選單。
-- 【更新】關於頁面調整了顯示方式。
-- 【更新】添加 Kyouka-MQ-v7 七代中畫質動畫專用修復模型。
-- 【修復】在沒有模型時下載模型切換模型會顯示錯誤，需要手動重新切模型的問題。
-- 【修復】刪除模型頁面模型大小顯示錯誤的問題。
-- 【修復】非 RTX 的顯卡(如 GTX 16、10...等)輸出黑色畫面的問題。
-- 【修復】app.log 儲存為空的問題。
-### 已知問題
-- 【錯誤】影像評估核心尚未完成，導致評估錯誤。
-- 【錯誤】基準測試 CPU 型號不直覺，基準測試不夠符合實際場景。 (1.0.2 已修正)
-- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
-- 【錯誤】調整不同分塊大小運行模型沒有成功卸載。 (1.0.2 已修正)
-- 【錯誤】基準測試選擇 CPU 運行時，張量在不同設備導致基準測試錯誤。 (1.0.2 已修正)
-- 【錯誤】在沒有模型的時候匯入外部模型後註冊卻無法使用模型的問題。 (1.1.0 已修正)
-
-### 1.0.0 (2025 年 4 月 19 日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.0.jpg)
-### 重要變更
-- 【重大】首個發布版本，其實 1.0.0 版4月8日就完成了但還在決定版本命名及其他細項所以一直沒發佈。
-- 【重大】全面改寫模型的存取機制，從開啟時載入改為要使用時再載入，減少資源開銷。 (NS_ModelManager.py)
-- 【重大】改寫了影像顯示核心，現在能使用並排顯示、分割顯示、單獨顯示，且能使用滑鼠對影像放大及拖動。 (views.py)
-### 新增功能
-- 【新增】新增了模型選單功能，可以快速切換模型 (適用於:image_tab.py、video_tab.py)
-- 【新增】新增了影片處理頁面，更好的影片處理 GUI ，更細的影片處理功能，包含輸出分辨率、裁切方式、編碼器選像、影片封裝格式、幀預覽選項...等。
-- 【新增】新增了訓練模型頁面，添加了第1代資料處理器以及第5代 NS-IC 模型訓練器。
-- 【新增】新增了影像評估頁面，添加 PSNR 、 SSIM 、差異圖及色彩直方圖等參數方便用戶快速評斷圖片。
-- 【新增】新增了模型下載功能，用戶不再需要從官網下載模型。 
-### 已知問題
-- 【錯誤】在沒有模型時下載模型切換模型會顯示錯誤，需要手動重新切模型。 (1.0.1 已修正)
-- 【錯誤】刪除模型頁面模型大小顯示錯誤。 (1.0.1 已修正)
-- 【錯誤】影像評估核心尚未完成，導致評估錯誤。
-- 【錯誤】由於模型使用混合精度(AMP)需要使用到 Tensor 核心，非 RTX 的顯卡(如 GTX 16、10...等)會報錯。 (1.0.1 已修正)
-- 【錯誤】app.log 儲存為空的問題。 (1.0.1 已修正)
-- 【錯誤】在沒有模型的時候匯入外部模型後註冊卻無法使用模型的問題。 (1.1.0 已修正)
 
 [所有發行版本](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/docs/Changelog.md)
 
@@ -114,7 +81,7 @@
 > 此為必要步驟。
 ```shell
 git clone https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm.git
-cd Nagato-Sakura-Image-Charm-py
+cd Nagato-Sakura-Image-Charm
 pip install -r requirements.txt
 ```
 ## GUI 介面
@@ -124,31 +91,45 @@ pip install -r requirements.txt
 python main.py
 ```
 
+## 模型介紹
+### Kyouka -《鏡花》(動漫JEPG壓縮還原模型)
+<p align="center">
+  <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Kyouka_comparison.webp">
+</p>
+
+### Ritsuka -《斷律》(動漫馬賽克還原模型)
+<p align="center">
+  <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Ritsuka_comparison.webp">
+</p>
+
+
 ## 待辦事項
 - [ ] **高優先度：**
   - [x] 快速安裝指南。
   - [ ] 使用指南(wiki)。
-  - [ ] 全部改寫影像評估頁面的模型。 (Nagato-Sakura-Image-Quality-Classification)
+  - [x] 改寫AI圖像評分模型。
 
 - [ ] **功能:**
-  - 程式相關
-    - [x] 模型強度調整。
-    - [x] 圖片超分辨率。
-    - [x] 影片超分辨率。
-    - [x] 隱藏的小彩蛋。
+  - 程式
+    - [x] 模型強度調整功能。
+    - [x] 模型超分辨率功能。
     - [x] 計算設備選擇功能。
-    - [x] 符合場景的基準測試。
-    - [ ] Discord 機器人 cog 調用。
-    - [ ] 模型訓練器 Github 倉庫架設。
-    - [ ] 五代模型訓練器更新成七代模型訓練器。
-    - [ ] 次世代模型架構開發(已達到當前模型架構的極限，需要大改 NS_ImageEnhancer.py)
+    - [x] 符合實際場景的基準測試。
+    - [x] 隱藏的小彩蛋。
+    - [ ] GUI 訓練器更新(五代 → 七代)。
+    - [ ] 擴充插件管理功能。
     
   - 模型
+    - [ ] 次世代模型架構開發(已達到現有模型架構極限)。
     - [x] 第6代《鏡花・碎象還映》Kyouka 泛用型動畫圖像 JPEG 壓縮還原模型。
     - [x] 第6代《鏡花・幽映深層》Kyouka-LQ 低畫質特化動畫圖像 JPEG 壓縮還原模型。
     - [x] 第7代《鏡花・霞緲輪影》Kyouka-MQ 普通畫質特化動畫圖像 JPEG 壓縮還原模型。
-    - [x] 第7代《斷律・映格輪廻》Ritsuka 馬賽克還原模型。 
-    - [x] 第7代《界律・重編因像》Kairitsu 寫實畫面修復模型。 (模型架構達到極限效果不理想待發布)
+    - [x] 第7代《斷律・映格輪廻》Ritsuka-HQ 2~4格像素點馬賽克還原模型。 
+    - [x] 第7代《界律・重編因像》Kairitsu 寫實畫面修復模型。 (效果不理想只添加到releases不添加進模型清單)
+
+  - 其他
+    - [ ] Discord 機器人版本的 cog。
+    - [ ] 模型訓練器 Github 倉庫架設。
 
 ## 致謝
 特別感謝以下項目和貢獻者：
@@ -158,8 +139,6 @@ python main.py
 - [Nagato-Sakura-Image-Quality-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Classification)
 
 ### 貢獻者
-<a href="https://github.com/AmanoShizukikun/Nagato-Sakura-Discord-Bot-py/graphs/contributors" target="_blank">
-  <img src="https://contrib.rocks/image?repo=AmanoShizukikun/Nagato-Sakura-Discord-Bot-py" />
+<a href="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/graphs/contributors" target="_blank">
+  <img src="https://contrib.rocks/image?repo=AmanoShizukikun/Nagato-Sakura-Image-Charm" />
 </a>
-
-
