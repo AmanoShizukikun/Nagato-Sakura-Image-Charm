@@ -92,16 +92,23 @@ python main.py
 ```
 
 ## 模型介紹
-### Kyouka -《鏡花》(動漫JEPG壓縮還原模型)
+### Kyouka -《鏡花》- 碎裂之象，在鏡中重構原初之姿。鏡中之花非虛幻，碎裂之象皆可還映。
 <p align="center">
   <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Kyouka_comparison.webp">
 </p>
 
-### Ritsuka -《斷律》(動漫馬賽克還原模型)
+- ### 適用場景: 動漫JEPG壓縮還原模型
+- ### 訓練參數: 10K
+<br/>
+
+### Ritsuka -《斷律》- 格狀的影塊，是序斷的殘響。在光與影的律動中，復甦真實之形。
 <p align="center">
   <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Ritsuka_comparison.webp">
 </p>
 
+- ### 適用場景: 動漫馬賽克還原模型
+- ### 訓練參數: 10K
+<br/>
 
 ## 待辦事項
 - [ ] **高優先度：**
