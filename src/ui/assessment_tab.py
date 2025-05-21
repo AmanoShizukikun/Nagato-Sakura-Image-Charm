@@ -15,7 +15,88 @@ from PyQt6.QtGui import QPixmap, QImage, QPainter, QColor
 from src.ui.views import MultiViewWidget, SynchronizedGraphicsView
 from src.processing.NS_ImageEvaluator import ImageEvaluator
 from src.processing.NS_ImageQualityScorer import ImageQualityScorer
+from src.processing.NS_ImageClassification import ImageClassifier
 
+
+class ClassificationWorker(QThread):
+    """用於處理圖像分類的工作線程"""
+    resultReady = pyqtSignal(dict)
+    error = pyqtSignal(str)
+    def __init__(self, classifier=None, image=None, is_image_a=True):
+        super().__init__()
+        self.classifier = classifier or ImageClassifier()
+        self.image = image
+        self.is_image_a = is_image_a
+        
+    def set_image(self, image):
+        """設置要分類的圖像"""
+        self.image = image
+        
+    def run(self):
+        """執行分類任務"""
+        try:
+            if self.image is None:
+                self.error.emit("未提供圖像進行分類")
+                return
+                
+            if not self.classifier.is_model_loaded():
+                if not self.classifier.load_model():
+                    # 發送未檢測到模型的結果
+                    if self.is_image_a:
+                        self.resultReady.emit({
+                            "model_a": "未偵測到模型",
+                            "model_a_acc": None
+                        })
+                    else:
+                        self.resultReady.emit({
+                            "model_b": "未偵測到模型",
+                            "model_b_acc": None
+                        })
+                    return
+            
+            result = self.classifier.classify_image(self.image)
+            
+            if not result["success"]:
+                if "model not found" in result.get("error", "").lower():
+                    # 模型不存在的情況
+                    if self.is_image_a:
+                        self.resultReady.emit({
+                            "model_a": "未偵測到模型",
+                            "model_a_acc": None
+                        })
+                    else:
+                        self.resultReady.emit({
+                            "model_b": "未偵測到模型",
+                            "model_b_acc": None
+                        })
+                else:
+                    # 其他錯誤
+                    self.error.emit(f"分類失敗: {result.get('error', '未知錯誤')}")
+                return
+                
+            # 準備結果數據
+            top_class = result["top_class"]
+            top_probability = result["top_probability"]
+            
+            # 檢查是否為NULL
+            if top_class is None:
+                top_class = "NULL"
+            
+            # 發送分類結果
+            if self.is_image_a:
+                self.resultReady.emit({
+                    "model_a": top_class,
+                    "model_a_acc": top_probability
+                })
+            else:
+                self.resultReady.emit({
+                    "model_b": top_class,
+                    "model_b_acc": top_probability
+                })
+                
+        except Exception as e:
+            logging.error(f"圖像分類過程出錯: {e}")
+            self.error.emit(f"分類失敗: {str(e)}")
 
 class AssessmentWorker(QThread):
     """用於處理圖像評估的工作線程"""
@@ -217,6 +298,28 @@ class MetricDisplay(QFrame):
             layout.addWidget(label, row_pos, 0)
             layout.addWidget(value, row_pos, 1)
             self.metrics[key] = value
+        model_header = QLabel("<b>AI模型推薦</b>")
+        model_header.setStyleSheet("font-size: 12px; padding-top: 6px;")
+        layout.addWidget(model_header, len(metrics_list) + 4, 0, 1, 2)
+        
+        model_metrics_list = [
+            ("model_a", "圖A推薦:", "AI推薦用於處理圖A的最佳模型"),
+            ("model_a_acc", "準確率:", "推薦模型的準確率"),
+            ("model_b", "圖B推薦:", "AI推薦用於處理圖B的最佳模型"),
+            ("model_b_acc", "準確率:", "推薦模型的準確率")
+        ]
+        
+        for i, (key, text, tooltip) in enumerate(model_metrics_list):
+            label = QLabel(text)
+            value = QLabel("--")
+            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            value.setToolTip(tooltip)
+            value.setStyleSheet("font-weight: bold; padding: 2px;")
+            row_pos = len(metrics_list) + 5 + i
+            layout.setRowMinimumHeight(row_pos, 20)
+            layout.addWidget(label, row_pos, 0)
+            layout.addWidget(value, row_pos, 1)
+            self.metrics[key] = value
 
     def update_metrics(self, results):
         """更新指標值並使用顏色提示"""
@@ -286,7 +389,57 @@ class MetricDisplay(QFrame):
                     self.metrics["ai_score_b"].setStyleSheet("color: orange; font-weight: bold; padding: 2px;")
                 else:
                     self.metrics["ai_score_b"].setStyleSheet("color: red; font-weight: bold; padding: 2px;")
-
+                    
+        if 'model_a' in results:
+            if results['model_a'] is None:
+                self.metrics["model_a"].setText("NULL")
+                self.metrics["model_a"].setStyleSheet("color: red; font-weight: bold; padding: 2px;")
+            elif results['model_a'] == "未偵測到模型":
+                self.metrics["model_a"].setText("未偵測到模型")
+                self.metrics["model_a"].setStyleSheet("color: #888; font-weight: bold; padding: 2px;")
+            else:
+                self.metrics["model_a"].setText(results['model_a'])
+                self.metrics["model_a"].setStyleSheet("color: white; font-weight: bold; padding: 2px;")
+            
+        if 'model_a_acc' in results:
+            acc = results['model_a_acc']
+            if acc is None or results.get('model_a') == "未偵測到模型":
+                self.metrics["model_a_acc"].setText("--")
+                self.metrics["model_a_acc"].setStyleSheet("font-weight: bold; padding: 2px;")
+            else:
+                self.metrics["model_a_acc"].setText(f"{acc:.2f}%")
+                if acc > 90:
+                    self.metrics["model_a_acc"].setStyleSheet("color: green; font-weight: bold; padding: 2px;")
+                elif acc > 70:
+                    self.metrics["model_a_acc"].setStyleSheet("color: orange; font-weight: bold; padding: 2px;")
+                else:
+                    self.metrics["model_a_acc"].setStyleSheet("color: red; font-weight: bold; padding: 2px;")
+                
+        if 'model_b' in results:
+            if results['model_b'] is None:
+                self.metrics["model_b"].setText("NULL")
+                self.metrics["model_b"].setStyleSheet("color: red; font-weight: bold; padding: 2px;")
+            elif results['model_b'] == "未偵測到模型":
+                self.metrics["model_b"].setText("未偵測到模型")
+                self.metrics["model_b"].setStyleSheet("color: #888; font-weight: bold; padding: 2px;")
+            else:
+                self.metrics["model_b"].setText(results['model_b'])
+                self.metrics["model_b"].setStyleSheet("color: white; font-weight: bold; padding: 2px;")
+            
+        if 'model_b_acc' in results:
+            acc = results['model_b_acc']
+            if acc is None or results.get('model_b') == "未偵測到模型":
+                self.metrics["model_b_acc"].setText("--")
+                self.metrics["model_b_acc"].setStyleSheet("font-weight: bold; padding: 2px;")
+            else:
+                self.metrics["model_b_acc"].setText(f"{acc:.2f}%")
+                if acc > 90:
+                    self.metrics["model_b_acc"].setStyleSheet("color: green; font-weight: bold; padding: 2px;")
+                elif acc > 70:
+                    self.metrics["model_b_acc"].setStyleSheet("color: orange; font-weight: bold; padding: 2px;")
+                else:
+                    self.metrics["model_b_acc"].setStyleSheet("color: red; font-weight: bold; padding: 2px;")
+                    
     def clear(self):
         """清空所有指標數值"""
         for key, label in self.metrics.items():
@@ -413,7 +566,10 @@ class AssessmentTab(QWidget):
         super().__init__(parent)
         self.parent = parent
         self.evaluator = ImageEvaluator()
+        self.image_classifier = ImageClassifier()
         self.assessment_worker = AssessmentWorker(self.evaluator)
+        self.classifier_worker_a = ClassificationWorker(self.image_classifier, is_image_a=True) 
+        self.classifier_worker_b = ClassificationWorker(self.image_classifier, is_image_a=False)
         self.scorer_worker_a = None
         self.scorer_worker_b = None
         self.load_img_a_path = ""
@@ -424,7 +580,11 @@ class AssessmentTab(QWidget):
         self.assessment_worker.error.connect(self.on_assessment_error)
         self.assessment_worker.aiScoreReady.connect(self.on_ai_scores)
         self.assessment_worker.finished.connect(self.on_assessment_finished)
-
+        self.classifier_worker_a.resultReady.connect(self.on_classification_results)
+        self.classifier_worker_a.error.connect(self.on_classification_error)
+        self.classifier_worker_b.resultReady.connect(self.on_classification_results)
+        self.classifier_worker_b.error.connect(self.on_classification_error)
+        
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(6, 6, 6, 6)
@@ -570,7 +730,11 @@ class AssessmentTab(QWidget):
                     self.multi_view.image_b_name if current_image_b else None
                 )
                 self.multi_view.image_a_group.setTitle(f"圖像A: {os.path.basename(file_path)}")
+                
+                # 同時執行品質評分和圖像分類
                 self.run_single_image_scoring(image_a, file_path, True)
+                self.run_single_image_classification(image_a, True)
+                
                 if self.multi_view.image_b is not None:
                     self.run_assessment(keep_ai_scores=True)  
             except Exception as e:
@@ -593,7 +757,11 @@ class AssessmentTab(QWidget):
                     f"圖B: {os.path.basename(file_path)}"
                 )
                 self.multi_view.image_b_group.setTitle(f"圖像B: {os.path.basename(file_path)}")
+                
+                # 同時執行品質評分和圖像分類
                 self.run_single_image_scoring(image_b, file_path, False)
+                self.run_single_image_classification(image_b, False)
+                
                 if self.multi_view.image_a is not None:
                     self.run_assessment(keep_ai_scores=True)   
             except Exception as e:
@@ -618,6 +786,57 @@ class AssessmentTab(QWidget):
             self.scorer_worker_b.scoreReady.connect(self.on_image_b_score_ready)
             self.scorer_worker_b.error.connect(lambda error: self.on_single_image_error(error, False))
             self.scorer_worker_b.start()
+
+    def run_single_image_classification(self, image, is_image_a):
+        """在單獨線程中運行單張圖像的分類"""
+        if is_image_a:
+            if self.classifier_worker_a.isRunning():
+                self.classifier_worker_a.terminate()
+                self.classifier_worker_a.wait()
+            self.classifier_worker_a.set_image(image)
+            self.classifier_worker_a.start()
+        else:
+            if self.classifier_worker_b.isRunning():
+                self.classifier_worker_b.terminate()
+                self.classifier_worker_b.wait()
+            self.classifier_worker_b.set_image(image)
+            self.classifier_worker_b.start()
+
+    @pyqtSlot(dict)
+    def on_classification_results(self, results):
+        """處理分類結果"""
+        if results:
+            self.metric_display.update_metrics(results)
+            if "model_a" in results:
+                model_a = results.get('model_a')
+                acc_a = results.get('model_a_acc')
+                
+                if model_a == "未偵測到模型":
+                    logging.info("圖A分類完成: 未偵測到模型")
+                elif model_a == "NULL":
+                    logging.info("圖A分類完成: 推薦模型為 NULL")
+                elif acc_a is not None:
+                    logging.info(f"圖A分類完成: 推薦使用 {model_a} 模型, 準確率: {acc_a:.2f}%")
+                else:
+                    logging.info(f"圖A分類完成: 推薦使用 {model_a} 模型, 準確率: 未知")
+                    
+            elif "model_b" in results:
+                model_b = results.get('model_b')
+                acc_b = results.get('model_b_acc')
+                
+                if model_b == "未偵測到模型":
+                    logging.info("圖B分類完成: 未偵測到模型")
+                elif model_b == "NULL":
+                    logging.info("圖B分類完成: 推薦模型為 NULL")
+                elif acc_b is not None:
+                    logging.info(f"圖B分類完成: 推薦使用 {model_b} 模型, 準確率: {acc_b:.2f}%")
+                else:
+                    logging.info(f"圖B分類完成: 推薦使用 {model_b} 模型, 準確率: 未知")
+
+    @pyqtSlot(str)
+    def on_classification_error(self, error_msg):
+        """處理分類錯誤"""
+        logging.error(f"圖像分類錯誤: {error_msg}")
 
     @pyqtSlot(object, str, str)
     def on_image_a_score_ready(self, score, file_name, size_info):
@@ -731,6 +950,8 @@ class AssessmentTab(QWidget):
         """交換圖A和圖B"""
         if self.multi_view.image_a is None or self.multi_view.image_b is None:
             return 
+        
+        # 交換圖像
         image_a = self.multi_view.image_a
         image_b = self.multi_view.image_b
         name_a = self.multi_view.image_a_name
@@ -738,16 +959,21 @@ class AssessmentTab(QWidget):
         title_a = self.multi_view.image_a_group.title()
         title_b = self.multi_view.image_b_group.title()
         self.load_img_a_path, self.load_img_b_path = self.load_img_b_path, self.load_img_a_path
+        
         self.multi_view.set_images(
             image_b,
             image_a,
             name_b,
             name_a
         )
+        
         self.multi_view.image_a_group.setTitle(title_b)
         self.multi_view.image_b_group.setTitle(title_a)
+        
+        # 交換AI評分
         score_a_text = self.metric_display.metrics["ai_score_a"].text()
         score_b_text = self.metric_display.metrics["ai_score_b"].text()
+        
         if score_a_text != "--" and score_b_text != "--":
             if score_a_text == "未偵測到模型" and score_b_text == "未偵測到模型":
                 self.metric_display.update_metrics({
@@ -769,16 +995,52 @@ class AssessmentTab(QWidget):
                     'ai_score_a': float(score_b_text),
                     'ai_score_b': float(score_a_text)
                 })
+        
+        # 交換模型推薦
+        model_a_text = self.metric_display.metrics["model_a"].text()
+        model_b_text = self.metric_display.metrics["model_b"].text()
+        model_a_acc_text = self.metric_display.metrics["model_a_acc"].text()
+        model_b_acc_text = self.metric_display.metrics["model_b_acc"].text()
+        
+        if model_a_text != "--" and model_b_text != "--":
+            try:
+                model_a_acc = float(model_a_acc_text.replace("%", ""))
+                model_b_acc = float(model_b_acc_text.replace("%", ""))
+                self.metric_display.update_metrics({
+                    'model_a': model_b_text,
+                    'model_a_acc': model_b_acc,
+                    'model_b': model_a_text,
+                    'model_b_acc': model_a_acc
+                })
+            except ValueError:
+                pass
+        
         logging.info("已交換圖A和圖B的位置")
         self.run_assessment(keep_ai_scores=True)
+        
+        # 重新執行圖像分類
+        if image_a and image_b:
+            self.run_single_image_classification(image_b, True)  # 圖B變成圖A
+            self.run_single_image_classification(image_a, False)  # 圖A變成圖B
 
     def clear_results(self):
-        """清空所有結果顯示，包括AI評分"""
+        """清空所有結果顯示，包括AI評分和模型推薦"""
         self.metric_display.clear()
         self.diff_view.clear()
         self.hist_view_a.clear() 
         self.hist_view_b.clear()
         self.edge_view.clear()
+
+    def clear_comparison_results(self):
+        """清空比較結果顯示，但保留AI評分和模型推薦"""
+        self.diff_view.clear()
+        self.hist_view_a.clear() 
+        self.hist_view_b.clear()
+        self.edge_view.clear()
+        for key in ["psnr", "ssim", "mse"]:
+            if key in self.metric_display.metrics:
+                self.metric_display.metrics[key].setText("--")
+                self.metric_display.metrics[key].setStyleSheet("font-weight: bold; padding: 2px;")
     
     @pyqtSlot(int)
     def on_tab_changed(self, index):
@@ -811,4 +1073,15 @@ class AssessmentTab(QWidget):
         if self.scorer_worker_b and self.scorer_worker_b.isRunning():
             self.scorer_worker_b.terminate()
             self.scorer_worker_b.wait() 
+        if self.classifier_worker_a and self.classifier_worker_a.isRunning():
+            self.classifier_worker_a.terminate()
+            self.classifier_worker_a.wait()
+        if self.classifier_worker_b and self.classifier_worker_b.isRunning():
+            self.classifier_worker_b.terminate()
+            self.classifier_worker_b.wait()
+        
+        # 釋放分類器
+        if hasattr(self, 'image_classifier'):
+            self.image_classifier.unload_model()
+        
         event.accept()

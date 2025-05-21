@@ -1,3 +1,16 @@
+### 1.2.0 (2025 年 5 月 20 日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.0.jpg)
+### 重要變更
+- 【重大】正式將 Nagato-Sakura-Image-Classification (NS-C)圖像分類模型作為模型推薦外掛引入系統。
+- 【重大】更改了 Nagato-Sakura-Image-Classification (NS-C)的模型架構，從原本的 ResNet-19 改為更加輕量化的EfficientNet-B0。
+### 新增功能
+- 【新增】圖片處理頁面以及圖像評估頁面現在添加 NS-C 功能，可根據輸入圖像推薦最適合的的 NS-IQE 模型。
+- 【新增】Kairitsu 第九代泛用型寫實 JPEG 壓縮還原模型。
+### 已知問題
+- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
+- 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本將強制預裝 Nagato-Sakura-Image-Quality-Assessment 影像評分功能 (約1MB)。
+- 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本將強制預裝 Nagato-Sakura-Image-Classification (NS-C)模型推薦功能 (約16MB)。
+
 ### 1.1.1 (2025 年 5 月 04 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.1.jpg)
 ### 重要變更

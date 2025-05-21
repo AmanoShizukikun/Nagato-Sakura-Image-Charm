@@ -13,6 +13,19 @@
 由於算力短缺加上開發者最近相較忙碌，將在1.1.1版本後會暫緩長門櫻-影像魅影的開發，優先完成長門櫻-影像魅影訓練器相關的倉庫以及 Discord 版的 cog。
 
 ## 近期變動
+### 1.2.0 (2025 年 5 月 20 日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.0.jpg)
+### 重要變更
+- 【重大】正式將 Nagato-Sakura-Image-Classification (NS-C)圖像分類模型作為模型推薦外掛引入系統。
+- 【重大】更改了 Nagato-Sakura-Image-Classification (NS-C)的模型架構，從原本的 ResNet-19 改為更加輕量化的EfficientNet-B0。
+### 新增功能
+- 【新增】圖片處理頁面以及圖像評估頁面現在添加 NS-C 功能，可根據輸入圖像推薦最適合的的 NS-IQE 模型。
+- 【新增】Kairitsu 第九代泛用型寫實 JPEG 壓縮還原模型。
+### 已知問題
+- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
+- 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本將強制預裝 Nagato-Sakura-Image-Quality-Assessment 影像評分功能 (約1MB)。
+- 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本將強制預裝 Nagato-Sakura-Image-Classification (NS-C)模型推薦功能 (約16MB)。
+
 ### 1.1.1 (2025 年 5 月 04 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.1.jpg)
 ### 重要變更
@@ -40,20 +53,6 @@
 - 【錯誤】影像評估核心尚未完成，導致評估錯誤。 (1.1.0 已修正)
 - 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
 
-### 1.0.2 (2025 年 4 月 25 日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.2.jpg)
-### 重要變更
-- 【重大】全面改寫了基準測試。
-### 新增功能
-- 【更新】基準測試的頁面，現在的基準測試更能判斷出設備性能的差距且更加美觀。
-- 【修復】基準測試選擇 CPU 運行時，張量在不同設備導致基準測試錯誤。
-- 【修復】基準測試現在能正確顯示 CPU 的型號。
-- 【修復】調整不同分塊大小運行模型後沒有成功卸載模型的問題。
-### 已知問題
-- 【錯誤】影像評估核心尚未完成，導致評估錯誤。 (1.1.0 已修正)
-- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
-- 【錯誤】在沒有模型的時候匯入外部模型後註冊卻無法使用模型的問題。 (1.1.0 已修正)
-- 【修復】切換基準測試會導致顯存未成功釋放。 (1.1.0 已修正)
 
 [所有發行版本](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/docs/Changelog.md)
 
@@ -97,8 +96,25 @@ python main.py
   <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Kyouka_comparison.webp">
 </p>
 
-- ### 適用場景: 動漫JEPG壓縮還原模型
+- ### 模型版本: v6 (Kyouka-MQ 為 v7)
 - ### 訓練參數: 10K
+- ### 適用場景: 動漫JEPG壓縮還原
+
+| Model            |   Type    |                              Download                                 |  
+|:----------------:|:---------:|:---------------------------------------------------------------------:|
+| Kyouka-v6-314    |   NULL    | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+| Kyouka-LQ-v6-310 |    LQ     | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+| Kyouka-MQ-v7-349 |    MQ     | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+<br/>
+
+###  Kairitsu-《界律》- 幻象之律重編破碎時因，塵封記憶再現為清晰輪廓。。
+<p align="center">
+  <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Kairitsu_comparison.webp">
+</p>
+
+- ### 模型版本: v9 
+- ### 訓練參數: 25K
+- ### 適用場景: 寫實JEPG壓縮還原
 <br/>
 
 ### Ritsuka -《斷律》- 格狀的影塊，是序斷的殘響。在光與影的律動中，復甦真實之形。
@@ -106,9 +122,11 @@ python main.py
   <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Ritsuka_comparison.webp">
 </p>
 
-- ### 適用場景: 動漫馬賽克還原模型
+- ### 模型版本: v7
 - ### 訓練參數: 10K
+- ### 適用場景: 動漫馬賽克還原
 <br/>
+
 
 ## 待辦事項
 - [ ] **高優先度：**
@@ -123,10 +141,11 @@ python main.py
     - [x] 計算設備選擇功能。
     - [x] 符合實際場景的基準測試。
     - [x] 隱藏的小彩蛋。
-    - [ ] GUI 訓練器更新(五代 → 七代)。
+    - [ ] GUI 訓練器版本更新。
     - [ ] 擴充插件管理功能。
     
   - 模型
+    - [ ] 引入 VGG 損失函數。
     - [ ] 次世代模型架構開發(已達到現有模型架構極限)。
     - [x] 第6代《鏡花・碎象還映》Kyouka 泛用型動畫圖像 JPEG 壓縮還原模型。
     - [x] 第6代《鏡花・幽映深層》Kyouka-LQ 低畫質特化動畫圖像 JPEG 壓縮還原模型。
@@ -136,14 +155,16 @@ python main.py
 
   - 其他
     - [ ] Discord 機器人版本的 cog。
-    - [ ] 模型訓練器 Github 倉庫架設。
+    - [x] 模型訓練器 Github 倉庫架設。
 
 ## 致謝
 特別感謝以下項目和貢獻者：
 
 ### 項目
 - [Nagato-Sakura-Discord-Bot-py](https://github.com/AmanoShizukikun/Nagato-Sakura-Discord-Bot-py)
+- [Nagato-Sakura-Image-Charm-Trainer](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm-Trainer)
 - [Nagato-Sakura-Image-Quality-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Classification)
+- [Nagato-Sakura-Image-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Classification)
 
 ### 貢獻者
 <a href="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/graphs/contributors" target="_blank">

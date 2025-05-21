@@ -1,5 +1,5 @@
 {
-  "version": "1.1.1",
+  "version": "1.2.0",
   "last_updated": "2025-05-04",
   "models": {
     "NS-IC-Kyouka": {
@@ -40,6 +40,16 @@
       "preview": "assets/model_previews/Ritsuka-HQ.png",
       "category": "馬賽克",
       "added_date": "2025-04-27",
+      "author": "天野靜樹"
+    },
+        "NS-IC-Kairitsu": {
+      "name": "Kairitsu -《界律・重編因像》",
+      "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/download/model-space/NS-IC-Kairitsu-v9-385.pth",
+      "description": "幻象之律重編破碎時因，塵封記憶再現為清晰輪廓。",
+      "details": "泛用寫實 JPEG 壓縮錯色與鋸齒修復還原模型。記憶非滅，只是等待被重述的因果之詩。\n\n- 版本：v9.38\n- 訓練樣本數： 30K\n- 檔案大小：約 73.5 MB\n- 適用場景：寫實圖片的壓縮錯色與鋸齒修復",
+      "preview": "assets/model_previews/Kairitsu.png",
+      "category": "寫實",
+      "added_date": "2025-05-12",
       "author": "天野靜樹"
     }
   },

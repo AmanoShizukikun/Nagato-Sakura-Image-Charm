@@ -7,16 +7,46 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLa
                             QGroupBox, QMessageBox, QSlider, QSplitter, QFrame, QToolButton,
                             QScrollArea, QRadioButton, QLineEdit, QButtonGroup, QGridLayout,
                             QDoubleSpinBox)
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
 from PyQt6.QtGui import QIntValidator, QDoubleValidator
 
 from src.ui.views import MultiViewWidget
 from src.processing.NS_ImageProcessor import ImageProcessor
 from src.threads.NS_EnhancerThread import EnhancerThread
-
+from src.processing.NS_ImageClassification import ImageClassifier
 from src.utils.NS_DeviceInfo import get_system_info, get_device_options, get_device_name
 
+
 logger = logging.getLogger(__name__)
+
+class ClassifierThread(QThread):
+    """用於圖像分類的線程"""
+    resultReady = pyqtSignal(dict)
+    error = pyqtSignal(str)
+    
+    def __init__(self, classifier, image_path):
+        super().__init__()
+        self.classifier = classifier
+        self.image_path = image_path
+        
+    def run(self):
+        try:
+            if not self.classifier.is_model_loaded():
+                if not self.classifier.load_model():
+                    self.error.emit("未能載入分類模型")
+                    return
+                    
+            image = Image.open(self.image_path).convert('RGB')
+            result = self.classifier.classify_image(image)
+            
+            if not result["success"]:
+                self.error.emit(f"分類失敗: {result.get('error', '未知錯誤')}")
+                return
+                
+            self.resultReady.emit(result)
+            
+        except Exception as e:
+            self.error.emit(f"分類過程出錯: {str(e)}")
 
 class CollapsibleBox(QWidget):
     """可折疊的參數區塊"""
@@ -67,6 +97,8 @@ class ImageProcessingTab(QWidget):
         self.model_manager = None
         self.original_image_size = (0, 0) 
         self.system_info = get_system_info()
+        self.image_classifier = ImageClassifier()
+        self.classifier_thread = None
         self.setup_ui()
     
     def set_model_manager(self, model_manager):
@@ -235,6 +267,9 @@ class ImageProcessingTab(QWidget):
         progress_layout.addWidget(self.img_progress_bar, 3)
         self.img_status_label = QLabel("等待處理...")
         progress_layout.addWidget(self.img_status_label, 2)
+        self.recommended_model_label = QLabel("推薦模型: --")
+        self.recommended_model_label.setStyleSheet("color: white; font-weight: bold;")
+        progress_layout.addWidget(self.recommended_model_label, 2)
         self.model_status_label = QLabel("模型狀態: 未載入")
         progress_layout.addWidget(self.model_status_label, 1)
         preview_layout.addLayout(progress_layout)
@@ -449,8 +484,65 @@ class ImageProcessingTab(QWidget):
             self.enhance_button.setEnabled(True)
             self.save_button.setEnabled(False)
             self.enhanced_image = None
+            
+            # 運行圖像分類
+            self.run_image_classification(file_path)
+            
             if self.parent:
                 self.parent.tab_widget.setCurrentIndex(0)
+                
+    def run_image_classification(self, image_path):
+        """運行圖像分類獲取推薦模型"""
+        # 停止之前正在運行的分類線程
+        if self.classifier_thread and self.classifier_thread.isRunning():
+            self.classifier_thread.terminate()
+            self.classifier_thread.wait()
+        
+        # 更新UI狀態
+        self.recommended_model_label.setText("推薦模型: 分析中...")
+        self.recommended_model_label.setStyleSheet("color: gray; font-weight: bold;")
+        
+        # 創建並啟動新的分類線程
+        self.classifier_thread = ClassifierThread(self.image_classifier, image_path)
+        self.classifier_thread.resultReady.connect(self.on_classification_results)
+        self.classifier_thread.error.connect(self.on_classification_error)
+        self.classifier_thread.start()
+
+    def on_classification_results(self, result):
+        """處理分類結果"""
+        if result["success"]:
+            top_class = result["top_class"]
+            accuracy = result["top_probability"]
+            
+            if top_class == "NULL":
+                self.recommended_model_label.setText("推薦模型: NULL")
+                self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+            else:
+                self.recommended_model_label.setText(f"推薦模型: {top_class} ({accuracy:.1f}%)")
+                self.recommended_model_label.setStyleSheet("color: white; font-weight: bold;")
+                
+            logging.info(f"圖像分類完成: 推薦模型 {top_class}，準確率: {accuracy:.2f}%")
+            
+        else:
+            self.recommended_model_label.setText("推薦模型: 分類失敗")
+            self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+
+    def on_classification_error(self, error_msg):
+        """處理分類錯誤"""
+        self.recommended_model_label.setText("推薦模型: 未安裝插件")
+        self.recommended_model_label.setStyleSheet("color: #888; font-weight: bold;")
+        logging.error(f"圖像分類錯誤: {error_msg}")
+        
+    def closeEvent(self, event):
+        """確保在關閉時釋放資源"""
+        if hasattr(self, 'classifier_thread') and self.classifier_thread and self.classifier_thread.isRunning():
+            self.classifier_thread.terminate()
+            self.classifier_thread.wait()
+            
+        if hasattr(self, 'image_classifier'):
+            self.image_classifier.unload_model()
+            
+        event.accept()
     
     def enhance_image(self):
         if not self.input_image_path:

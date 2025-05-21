@@ -60,13 +60,10 @@ class DepthwiseSeparableConv(nn.Module):
         return x
 
 class NagatoSakuraImageQualityClassificationCNN(nn.Module):
-    """
-    輕量化CNN模型，使用深度可分離卷積、批量歸一化和全局平均池化減少參數量。
-    """
+    """長門櫻輕量化CNN模型，使用深度可分離卷積、批量歸一化和全局平均池化減少參數量。"""
     def __init__(self, dropout_rate: float = 0.5):
         super().__init__()
         self.features = nn.Sequential(
-            # 第一區塊
             nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
@@ -75,7 +72,6 @@ class NagatoSakuraImageQualityClassificationCNN(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
 
-            # 第二區塊
             DepthwiseSeparableConv(64, 128, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
@@ -84,7 +80,6 @@ class NagatoSakuraImageQualityClassificationCNN(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
 
-            # 第三區塊
             DepthwiseSeparableConv(128, 256, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(inplace=True),
@@ -93,7 +88,6 @@ class NagatoSakuraImageQualityClassificationCNN(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2),
 
-            # 第四區塊
             DepthwiseSeparableConv(256, 512, kernel_size=3, stride=1, padding=1),
             nn.BatchNorm2d(512),
             nn.ReLU(inplace=True),

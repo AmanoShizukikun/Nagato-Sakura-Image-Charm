@@ -444,6 +444,7 @@ class BenchmarkProcessor:
             "processed_blocks": completed_blocks,
             "test_completed": True 
         }
+        
     def _cleanup_enhancers(self, enhancers, device):
         """清理所有enhancer實例並釋放顯存"""
         try:
