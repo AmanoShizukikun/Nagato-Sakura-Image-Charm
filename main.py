@@ -24,6 +24,9 @@ def setup_logging():
     logging.info(f"日誌存放位置: {log_file_path}")
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
     setup_logging()
     app = QApplication(sys.argv)
     window = ImageEnhancerApp()

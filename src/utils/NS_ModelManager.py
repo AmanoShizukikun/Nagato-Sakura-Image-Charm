@@ -4,6 +4,8 @@ import torch
 import logging
 import threading
 import requests
+import sys
+import os
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QMessageBox
@@ -14,6 +16,19 @@ from src.utils.NS_ExtractUtility import ExtractUtility
 
 
 logger = logging.getLogger(__name__)
+
+def get_data_path(relative_path):
+    """取得資料檔案路徑（在執行檔同目錄下）"""
+    if hasattr(sys, '_MEIPASS'):
+        exe_dir = os.path.dirname(sys.executable)
+        return os.path.join(exe_dir, relative_path)
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), relative_path)
+
+def get_resource_path(relative_path):
+    """取得內建資源路徑（打包在執行檔內）"""
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), relative_path)
 
 class ModelManager(QObject):
     """模型管理器，負責模型的加載、下載、更新和管理"""
@@ -33,8 +48,8 @@ class ModelManager(QObject):
         super().__init__()
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        self.config_dir = os.path.join(self.base_dir, "config")
-        self.models_dir = os.path.join(self.base_dir, "models")
+        self.models_dir = get_data_path("models")
+        self.config_dir = get_data_path("config")
         self.models_file = os.path.join(self.config_dir, "models_data.json")
         self.usage_stats_file = os.path.join(self.config_dir, "model_usage_stats.json")
         os.makedirs(self.config_dir, exist_ok=True)
@@ -390,23 +405,33 @@ class ModelManager(QObject):
         try:
             self.available_models = []
             self.model_info = {}
+            
             if not os.path.exists(self.models_dir):
+                logger.warning(f"模型目錄不存在: {self.models_dir}")
                 os.makedirs(self.models_dir, exist_ok=True)
-                logger.info(f"創建模型目錄: {self.models_dir}")
-                return
+                return []
+            
+            logger.info(f"掃描模型目錄: {self.models_dir}")
+            
             for root, _, files in os.walk(self.models_dir):
                 for file in files:
                     if file.endswith(('.pth', '.pt', '.ckpt', '.safetensors')):
                         model_path = os.path.join(root, file)
                         rel_path = os.path.relpath(model_path, self.models_dir)
+                        
                         self.available_models.append(model_path)
                         self.model_statuses[model_path] = "available"
+                        
+                        # 獲取檔案資訊
                         model_name = os.path.splitext(file)[0]
                         size_bytes = os.path.getsize(model_path)
                         size_mb = size_bytes / (1024 * 1024)
                         last_modified = os.path.getmtime(model_path)
                         last_modified_date = datetime.fromtimestamp(last_modified).strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # 獲取額外資訊
                         extra_info = self._get_model_extra_info(model_name)
+                        
                         self.model_info[model_path] = {
                             "name": model_name,
                             "path": model_path,
@@ -419,6 +444,7 @@ class ModelManager(QObject):
                         }
             logger.info(f"掃描到 {len(self.available_models)} 個模型")
             return self.available_models
+            
         except Exception as e:
             logger.error(f"掃描模型目錄時出錯: {str(e)}")
             return []
