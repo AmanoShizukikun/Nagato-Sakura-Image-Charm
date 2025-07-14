@@ -119,9 +119,6 @@ class DownloadModelDialog(QDialog):
         self.retry_spinner.setMaximum(10)
         self.retry_spinner.setValue(3)
         options_layout.addWidget(self.retry_spinner, 1, 1)
-        self.auto_extract = QCheckBox("下載後自動解壓（如為壓縮包）")
-        self.auto_extract.setChecked(True)
-        options_layout.addWidget(self.auto_extract, 2, 0, 1, 2)
         parent_layout.addWidget(options_group)
 
     def setup_buttons(self, parent_layout):
@@ -192,7 +189,6 @@ class DownloadModelDialog(QDialog):
         preview_group = QGroupBox("模型預覽")
         preview_group.setStyleSheet("QGroupBox { font-weight: bold; }")
         preview_layout = QVBoxLayout(preview_group)
-        # --- 陰影效果 ---
         self.center_shadow_effect = QGraphicsDropShadowEffect()
         self.center_shadow_effect.setBlurRadius(15) 
         self.center_shadow_effect.setColor(QColor(0, 0, 0, 100)) 
@@ -518,8 +514,6 @@ class DownloadModelDialog(QDialog):
             return
         if index < 0: index = total_models - 1
         elif index >= total_models: index = 0
-
-        # --- 判斷滑動方向 ---
         old_index = self.current_model_index
         if slide_direction is None and total_models > 1:
              if index == (old_index + 1) % total_models:
@@ -527,8 +521,6 @@ class DownloadModelDialog(QDialog):
              elif index == (old_index - 1 + total_models) % total_models:
                  slide_direction = "left"
         target_model_index = index 
-
-        # --- 更新文字資訊 ---
         current_model_id = model_ids[target_model_index]
         current_model = self.official_models[current_model_id]
         self.model_count_label.setText(f"模型 {target_model_index + 1} / {total_models}")
@@ -549,8 +541,6 @@ class DownloadModelDialog(QDialog):
         self.model_details_text.setText(current_model["details"]) 
         filename = os.path.basename(current_model.get("url", "unknown_model"))
         self.official_save_path.setText(os.path.join("models", filename))
-
-        # --- 準備圖像 ---
         next_left_idx = (target_model_index - 1 + total_models) % total_models
         next_center_idx = target_model_index
         next_right_idx = (target_model_index + 1) % total_models
@@ -560,8 +550,6 @@ class DownloadModelDialog(QDialog):
         scaled_next_left = self._scale_and_align_pixmap(next_left_pixmap, self.left_preview_container.width(), self.left_preview_container.height())
         scaled_next_center = self._scale_and_align_pixmap(next_center_pixmap, self.preview_container_widget.width(), self.preview_container_widget.height())
         scaled_next_right = self._scale_and_align_pixmap(next_right_pixmap, self.right_preview_container.width(), self.right_preview_container.height())
-
-        # --- 執行更新 ---
         if slide_direction and total_models > 1:
             self.current_model_index = target_model_index 
             if self.model_preview_label and self.model_preview_label.graphicsEffect():
@@ -573,12 +561,10 @@ class DownloadModelDialog(QDialog):
                 slide_direction
             )
         else:
-            # --- 設置圖像 ---
             self.current_model_index = target_model_index 
             self._current_left_preview_label.setPixmap(scaled_next_left)
             self._current_left_preview_label.setText("" if has_next_left_img else "無預覽")
             self._current_left_preview_label.setGraphicsEffect(None) 
-
             self.model_preview_label.setPixmap(scaled_next_center)
             self.model_preview_label.setText("" if has_next_center_img else f"無預覽圖\n{next_center_name}")
             if not self.model_preview_label.graphicsEffect() or not self.model_preview_label.graphicsEffect().isEnabled():
@@ -815,11 +801,10 @@ class DownloadModelDialog(QDialog):
                 return
             num_threads = self.thread_slider.value()
             retry_count = self.retry_spinner.value()
-            auto_extract = self.auto_extract.isChecked()
             self.status_label.setText(f"準備下載官方模型: {self.official_models[model_id]['name']}...")
             self.model_manager.download_official_model(
                 model_id, file_path, num_threads=num_threads,
-                retry_count=retry_count, auto_extract=auto_extract
+                retry_count=retry_count
             )
         else:
             url = self.url_edit.text().strip()
@@ -830,11 +815,10 @@ class DownloadModelDialog(QDialog):
                 return
             num_threads = self.thread_slider.value()
             retry_count = self.retry_spinner.value()
-            auto_extract = self.auto_extract.isChecked()
             self.status_label.setText(f"準備從URL下載...")
             self.model_manager.download_model_from_url(
                 url, file_path, num_threads=num_threads,
-                retry_count=retry_count, auto_extract=auto_extract
+                retry_count=retry_count
             )
 
     def _reset_download_state(self):

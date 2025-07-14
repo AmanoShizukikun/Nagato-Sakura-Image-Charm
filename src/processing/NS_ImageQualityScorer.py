@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 def should_use_amp(device):
     """自動檢測是否適合使用混合精度計算"""
     if device.type != 'cuda':
+        if device.type == 'mps':
+            logger.info("檢測到MPS設備，MPS不支援混合精度計算")
         return False
     gpu_name = torch.cuda.get_device_name(device)
     logger.info(f"正在檢測GPU '{gpu_name}' 是否適合使用混合精度...")

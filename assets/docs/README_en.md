@@ -10,9 +10,43 @@
 "Nagato Sakura Image Charm" is a derivative of the "Nagato Sakura Project," a graphical image enhancement and evaluation tool based on the image core of "Nagato Sakura." It supports AI super-resolution, image and video enhancement, quality assessment, and other features.
 
 ## Announcement
-Due to computational resource constraints and the developer's busy schedule, development of Nagato Sakura Image Charm will be paused after version 1.1.1. Priority will be given to completing the Nagato Sakura Image Charm Trainer repository and the Discord version cog.
+Added support for Apple Metal Performance Shaders (MPS), now you can use hardware acceleration on Apple systems.
+NS-IC-Kairitsu-v7pro-370 and NS-IC-Ritsuka-LQ-v7-228(Beta) are not included in the built-in model list, please download models from Github model space.
 
 ## Recent Changes
+### 1.2.1 (July 15, 2025)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.1.jpg)
+### Important Changes
+- [Major] Added support for Apple Metal Performance Shaders (MPS), now you can use hardware acceleration on Apple systems.
+- [Major] Removed ExtractUtility.py, eliminated decompression functionality.
+### New Features
+- [New] Video processing functionality now includes NS-C model recommendation feature.
+- [Update] Optimized NS-C model invocation method, resources are automatically released after use.
+- [Update] Optimized benchmark test startup efficiency, collecting system information in background threads to avoid UI blocking.
+- [Fix] Fixed issue where model recommendation feature couldn't be used on some systems and in light mode.
+- [Fix] Fixed issue where video processing would crash when opening folder dialog after completing video processing on MacOS.
+- [Fix] Fixed issue where selecting a model from the model list after downloading would result in being unable to use that model when no models exist and clicking "No" in the new model dialog.
+### Known Issues
+- [Bug] Super-resolution image preview size differs from original image, making intuitive comparisons difficult.
+- [Bug] Plugin management feature is incomplete. Version 1.2.0 and later will forcibly pre-install the Nagato-Sakura-Image-Quality-Assessment image scoring functionality (approximately 1MB).
+- [Bug] Plugin management feature is incomplete. Version 1.2.0 and later will forcibly pre-install the Nagato-Sakura-Image-Classification (NS-C) model recommendation functionality (approximately 16MB).
+- [Bug] MacOS crashes when running full image evaluation with two images present simultaneously.
+- [Bug] Linux crashes due to missing fonts when running full image evaluation with two images present simultaneously.
+- [Bug] MacOS/Linux download page text overlaps on preview box.
+
+### 1.2.0 (May 20, 2025)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.0.jpg)
+### Important Changes
+- [Major] Officially introduced Nagato-Sakura-Image-Classification (NS-C) image classification model as a model recommendation plugin into the system.
+- [Major] Changed the model architecture of Nagato-Sakura-Image-Classification (NS-C), from the original ResNet-19 to a more lightweight EfficientNet-B0.
+### New Features
+- [New] Image processing page and image evaluation page now include NS-C functionality, which can recommend the most suitable NS-IQE model based on input images.
+- [New] Kairitsu ninth-generation general-purpose realistic JPEG compression restoration model.
+### Known Issues
+- [Bug] Super-resolution image preview size differs from original image, making intuitive comparisons difficult.
+- [Bug] Plugin management feature is incomplete. Version 1.2.0 will forcibly pre-install the Nagato-Sakura-Image-Quality-Assessment image scoring functionality (approximately 1MB).
+- [Bug] Plugin management feature is incomplete. Version 1.2.0 will forcibly pre-install the Nagato-Sakura-Image-Classification (NS-C) model recommendation functionality (approximately 16MB).
+
 ### 1.1.1 (May 04, 2025)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.1.jpg)
 ### Important Changes
@@ -26,34 +60,6 @@ Due to computational resource constraints and the developer's busy schedule, dev
 - [Bug] Super-resolution image preview size differs from original image, making intuitive comparisons difficult.
 - [Bug] Plugin management feature is incomplete. Version 1.1.1 will forcibly pre-install the Nagato-Sakura-Image-Quality-Assessment image scoring functionality (approximately 1MB).
 
-### 1.1.0 (April 28, 2025)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.0.jpg)
-### Important Changes
-- [Major] Computing device selection feature, now allowing manual forcing of CPU for image and video processing.
-### New Features
-- [New] Ritsuka-HQ seventh-generation anime mosaic restoration model.
-- [Update] Optimized benchmark test balance, adjusted memory allocation strategies, improved VRAM allocation strategies, and optimized progress bar accuracy.
-- [Update] Computing device selection now displays CPU and NVIDIA GPU models for easier multi-device switching (added NS_DeviceInfo.py).
-- [Fix] Fixed issue where imported external models couldn't be used after registration when there were no models.
-- [Fix] Fixed issue where switching benchmark tests would cause VRAM to not be properly released.
-### Known Issues
-- [Bug] Image evaluation core not completed, causing evaluation errors. (Fixed in 1.1.0)
-- [Bug] Super-resolution image preview size differs from original image, making intuitive comparisons difficult.
-
-### 1.0.2 (April 25, 2025)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.2.jpg)
-### Important Changes
-- [Major] Completely rewrote the benchmark tests.
-### New Features
-- [Update] Benchmark test page now better determines device performance differences and is more visually appealing.
-- [Fix] Fixed benchmark test errors caused by tensors on different devices when running benchmarks on CPU.
-- [Fix] Benchmark tests now correctly display CPU model.
-- [Fix] Fixed issue where models weren't successfully unloaded after running with different tile sizes.
-### Known Issues
-- [Bug] Image evaluation core not completed, causing evaluation errors. (Fixed in 1.1.0)
-- [Bug] Super-resolution image preview size differs from original image, making intuitive comparisons difficult.
-- [Bug] Issue where imported external models couldn't be used after registration when there were no models. (Fixed in 1.1.0)
-- [Fix] Switching benchmark tests causes VRAM to not be properly released. (Fixed in 1.1.0)
 
 [All Release Versions](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/docs/Changelog.md)
 
@@ -92,15 +98,41 @@ python main.py
 ```
 
 ## Model Introduction
-### Kyouka -《Mirror Flower》(Anime JPEG Compression Restoration Model)
+### Kyouka -《Mirror Flower》- Shattered reflections, reconstructed in the mirror to their original form. The flower in the mirror is not an illusion, all shattered reflections can be restored.
 <p align="center">
   <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Kyouka_comparison.webp">
 </p>
 
-### Ritsuka -《Breaking Law》(Anime Mosaic Restoration Model)
+- ### Model Version: v6 (Kyouka-MQ is v7)
+- ### Training Parameters: 10K
+- ### Application Scenario: Anime JPEG Compression Restoration
+
+| Model            |   Type    |                              Download                                 |  
+|:----------------:|:---------:|:---------------------------------------------------------------------:|
+| Kyouka-v6-314    |   NULL    | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+| Kyouka-LQ-v6-310 |    LQ     | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+| Kyouka-MQ-v7-349 |    MQ     | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+<br/>
+
+###  Kairitsu -《Boundary Law》- The law of illusion rewrites the broken cause and effect, sealed memories reappear as clear outlines.
+<p align="center">
+  <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Kairitsu_comparison.webp">
+</p>
+
+- ### Model Version: v9 
+- ### Training Parameters: 25K
+- ### Application Scenario: Realistic JPEG Compression Restoration
+<br/>
+
+### Ritsuka -《Breaking Law》- Grid-like shadow blocks are the broken echoes of sequence. In the rhythm of light and shadow, the true form is revived.
 <p align="center">
   <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Ritsuka_comparison.webp">
 </p>
+
+- ### Model Version: v7
+- ### Training Parameters: 10K
+- ### Application Scenario: Anime Mosaic Restoration
+<br/>
 
 
 ## To-Do List
@@ -116,11 +148,11 @@ python main.py
     - [x] Computing device selection functionality.
     - [x] Realistic benchmark testing.
     - [x] Hidden easter eggs.
-    - [ ] GUI trainer update (5th gen → 7th gen).
+    - [ ] GUI trainer update.
     - [ ] Plugin management functionality.
     
   - Models
-    - [ ] Next-generation model architecture development (reached the limit of existing model architecture).
+    - [x] Introduced VGG loss function.
     - [x] 6th Gen《Mirror Flower・Fragmented Image Reflection》Kyouka general-purpose anime image JPEG compression restoration model.
     - [x] 6th Gen《Mirror Flower・Deep Shadow Projection》Kyouka-LQ low-quality specialized anime image JPEG compression restoration model.
     - [x] 7th Gen《Mirror Flower・Hazy Ring Shadow》Kyouka-MQ normal-quality specialized anime image JPEG compression restoration model.
@@ -129,14 +161,16 @@ python main.py
 
   - Others
     - [ ] Discord bot version cog.
-    - [ ] Model trainer GitHub repository setup.
+    - [x] Model trainer GitHub repository setup.
 
 ## Acknowledgements
 Special thanks to the following projects and contributors:
 
 ### Projects
 - [Nagato-Sakura-Discord-Bot-py](https://github.com/AmanoShizukikun/Nagato-Sakura-Discord-Bot-py)
+- [Nagato-Sakura-Image-Charm-Trainer](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm-Trainer)
 - [Nagato-Sakura-Image-Quality-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Classification)
+- [Nagato-Sakura-Image-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Classification)
 
 ### Contributors
 <a href="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/graphs/contributors" target="_blank">

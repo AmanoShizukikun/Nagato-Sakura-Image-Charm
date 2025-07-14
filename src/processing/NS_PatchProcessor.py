@@ -107,7 +107,58 @@ def should_use_amp(device):
     logger.info("無法確定GPU是否支持混合精度，為安全起見禁用")
     return False
 
+def get_optimal_device():
+    """自動選擇最佳的計算設備"""
+    if torch.cuda.is_available():
+        device = torch.device('cuda')
+        logger.info(f"選擇 CUDA 設備: {torch.cuda.get_device_name()}")
+        return device
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        device = torch.device('mps')
+        logger.info("選擇 MPS 設備 (Apple Metal GPU)")
+        return device
+    else:
+        device = torch.device('cpu')
+        logger.info("選擇 CPU 設備")
+        return device
+
+def sync_device_memory(device):
+    """同步設備記憶體並釋放暫存資料"""
+    if device.type == 'cuda':
+        torch.cuda.synchronize(device)
+        torch.cuda.empty_cache()
+    elif device.type == 'mps':
+        if hasattr(torch.mps, 'synchronize'):
+            torch.mps.synchronize()
+        if hasattr(torch.mps, 'empty_cache'):
+            torch.mps.empty_cache()
+
+def get_device_memory_info(device):
+    """獲取設備記憶體資訊"""
+    memory_info = {"allocated": 0, "reserved": 0, "total": 0}
+    
+    if device.type == 'cuda':
+        memory_info["allocated"] = torch.cuda.memory_allocated(device) / (1024 * 1024)  # MB
+        memory_info["reserved"] = torch.cuda.memory_reserved(device) / (1024 * 1024)  # MB
+        memory_info["total"] = torch.cuda.get_device_properties(device).total_memory / (1024 * 1024)  # MB
+    elif device.type == 'mps':
+        if hasattr(torch.mps, 'driver_allocated_memory'):
+            memory_info["allocated"] = torch.mps.driver_allocated_memory() / (1024 * 1024)  # MB
+        if hasattr(torch.mps, 'current_allocated_memory'):
+            memory_info["allocated"] = torch.mps.current_allocated_memory() / (1024 * 1024)  # MB
+        memory_info["total"] = -1  # 表示未知
+    
+    return memory_info
+
 class ImageBlockProcessor:
+    _logged_device_configs = set()
+    
+    @classmethod
+    def reset_logging_state(cls):
+        """重置日誌狀態，用於開始新的處理會話"""
+        cls._logged_device_configs.clear()
+        logger.debug("已重置區塊處理器日誌狀態")
+    
     def __init__(self, model, device, block_size, overlap, use_weight_mask, blending_mode, use_amp=None):
         self.model = model
         self.device = device
@@ -126,16 +177,30 @@ class ImageBlockProcessor:
             self.model = model.to(device)
         if self.use_amp is None:
             self.use_amp = should_use_amp(device)
-        if device.type == 'cuda':
-            if self.use_amp:
-                logger.debug("區塊處理器使用混合精度計算")
-            else:
-                logger.debug("區塊處理器使用標準精度計算")
+        device_config_key = f"{device.type}_{self.use_amp}"
+        if device_config_key not in ImageBlockProcessor._logged_device_configs:
+            if device.type == 'cuda':
+                if self.use_amp:
+                    logger.info("啟用 CUDA 混合精度計算")
+                    logger.debug("區塊處理器使用混合精度計算")
+                else:
+                    logger.debug("區塊處理器使用標準精度計算")
+            elif device.type == 'mps':
+                self.use_amp = False
+                logger.info("MPS 設備不支援混合精度，已禁用")
+                logger.debug("區塊處理器使用 MPS 模式")
+            else:  # CPU
+                self.use_amp = False
+                logger.debug("區塊處理器使用CPU模式")
+            ImageBlockProcessor._logged_device_configs.add(device_config_key)
         else:
-            logger.debug("區塊處理器使用CPU模式")
+            if device.type == 'mps' or device.type == 'cpu':
+                self.use_amp = False
         if use_weight_mask:
             self.weight_mask = create_weight_mask(block_size, device, mode=blending_mode)
-            logger.debug(f"建立權重掩碼於 {device} 設備")
+            if f"weight_mask_{device.type}" not in ImageBlockProcessor._logged_device_configs:
+                logger.debug(f"建立權重掩碼於 {device} 設備")
+                ImageBlockProcessor._logged_device_configs.add(f"weight_mask_{device.type}")
         else:
             self.weight_mask = None
             
@@ -147,7 +212,6 @@ class ImageBlockProcessor:
             padded_block = torch.zeros(1, 3, self.block_size, self.block_size, device=self.device)
             padded_block[:, :, :block_height, :block_width] = block
             block = padded_block
-        
         with torch.no_grad():
             block = block.to(device=self.device, dtype=torch.float32)
             if self.use_amp and self.device.type == 'cuda':
@@ -182,11 +246,13 @@ class ImageBlockProcessor:
             current_mask = current_mask.to(device=enhanced_block.device)
             return enhanced_block * current_mask, current_mask
 
-def process_image_in_patches(model, image, device, block_size=256, overlap=64, use_weight_mask=True, blending_mode='改進型高斯分佈', use_amp=None):
+def process_image_in_patches(model, image, device, block_size=256, overlap=64, use_weight_mask=True, blending_mode='改進型高斯分佈', use_amp=None, reset_logging=True):
     model_device = next(model.parameters()).device
     if model_device != device:
         logger.debug(f"將模型從 {model_device} 移動到 {device}")
         model = model.to(device)
+    if reset_logging:
+        ImageBlockProcessor.reset_logging_state()
     return ImagePatchEnhancer(model, image, device, block_size, overlap, 
                             use_weight_mask, blending_mode, use_amp)
 

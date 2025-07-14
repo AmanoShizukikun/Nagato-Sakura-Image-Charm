@@ -18,11 +18,32 @@ from src.processing.NS_PatchProcessor import process_image_in_patches
 logger = logging.getLogger(__name__)
 
 def log_gpu_memory(device, message=""):
-    """記錄當前GPU顯存使用情況"""
+    """長門櫻會記錄當前設備記憶體使用情況"""
     if device.type == 'cuda':
         allocated = torch.cuda.memory_allocated(device) / (1024*1024)
         reserved = torch.cuda.memory_reserved(device) / (1024*1024)
-        logger.debug(f"GPU顯存狀態 {message}: 已分配={allocated:.2f}MB, 已保留={reserved:.2f}MB")
+        logger.debug(f"CUDA顯存狀態 {message}: 已分配={allocated:.2f}MB, 已保留={reserved:.2f}MB")
+    elif device.type == 'mps':
+        try:
+            if hasattr(torch.mps, 'current_allocated_memory'):
+                allocated = torch.mps.current_allocated_memory() / (1024*1024)
+                logger.debug(f"MPS記憶體狀態 {message}: 已分配={allocated:.2f}MB")
+            elif hasattr(torch.mps, 'driver_allocated_memory'):
+                allocated = torch.mps.driver_allocated_memory() / (1024*1024)
+                logger.debug(f"MPS記憶體狀態 {message}: 已分配={allocated:.2f}MB")
+        except Exception as e:
+            logger.debug(f"無法獲取MPS記憶體狀態 {message}: {str(e)}")
+
+def sync_device_memory(device):
+    """長門櫻會同步設備記憶體並釋放暫存資料"""
+    if device.type == 'cuda':
+        torch.cuda.synchronize(device)
+        torch.cuda.empty_cache()
+    elif device.type == 'mps':
+        if hasattr(torch.mps, 'synchronize'):
+            torch.mps.synchronize()
+        if hasattr(torch.mps, 'empty_cache'):
+            torch.mps.empty_cache()
 
 class BenchmarkProcessor:
     """長門櫻-影像魅影基準測試"""
@@ -80,7 +101,7 @@ class BenchmarkProcessor:
         return int(adjusted_score)
     
     def _remove_outliers(self, times):
-        """去除異常值以提高測試結果的穩定性"""
+        """長門櫻會去除異常值以提高測試結果的穩定性"""
         if len(times) <= 4: 
             return times
         q1 = np.percentile(times, 25)
@@ -102,8 +123,8 @@ class BenchmarkProcessor:
         self.is_cpu_test = (device.type == 'cpu')
         original_width, original_height = width, height
         gc.collect()
-        if device.type == 'cuda':
-            torch.cuda.empty_cache()
+        if device.type in ['cuda', 'mps']:
+            sync_device_memory(device)
             log_gpu_memory(device, "測試開始前") 
         block_size = self._determine_optimal_block_size(device)
         chunks_x = (width + block_size - 1) // block_size
@@ -128,9 +149,9 @@ class BenchmarkProcessor:
             self._warmup_model(model, test_tensor, device, use_amp, step_callback, warmup_iterations=3)
         except Exception as e:
             logger.error(f"長門櫻在預熱模型時遇到了困難: {str(e)}")
-            if device.type == 'cuda':
+            if device.type in ['cuda', 'mps']:
                 test_tensor = None
-                torch.cuda.empty_cache()
+                sync_device_memory(device)
                 gc.collect()
             if progress_callback:
                 progress_callback(0, iterations)
@@ -143,9 +164,9 @@ class BenchmarkProcessor:
             with torch.no_grad():
                 for i in range(iterations + warmup_iterations):
                     if self.stop_flag:
-                        if device.type == 'cuda':
+                        if device.type in ['cuda', 'mps']:
                             test_tensor = None
-                            torch.cuda.empty_cache()
+                            sync_device_memory(device)
                             gc.collect()
                         return {"error": "長門櫻已停止了測試"}
                     if step_callback:
@@ -161,10 +182,15 @@ class BenchmarkProcessor:
                                     _ = model(test_tensor)
                             else:
                                 _ = model(test_tensor)
-                            if (y * chunks_x + x + 1) % 10 == 0 and device.type == 'cuda':
-                                torch.cuda.synchronize()  
+                            if (y * chunks_x + x + 1) % 10 == 0 and device.type in ['cuda', 'mps']:
+                                if device.type == 'cuda':
+                                    torch.cuda.synchronize()
+                                elif device.type == 'mps' and hasattr(torch.mps, 'synchronize'):
+                                    torch.mps.synchronize()
                     if device.type == 'cuda':
                         torch.cuda.synchronize()
+                    elif device.type == 'mps' and hasattr(torch.mps, 'synchronize'):
+                        torch.mps.synchronize()
                     iter_time = time.time() - iter_start
                     scaled_time = iter_time * (width * height) / (total_chunks * block_size * block_size)
                     if i >= warmup_iterations:
@@ -177,9 +203,9 @@ class BenchmarkProcessor:
             logger.error(f"長門櫻在推理測試時遇到了困難: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
-            if device.type == 'cuda':
+            if device.type in ['cuda', 'mps']:
                 test_tensor = None
-                torch.cuda.empty_cache()
+                sync_device_memory(device)
                 gc.collect()
             return {"error": f"抱歉啊主人~測試失敗了: {str(e)}"}
         total_time = time.time() - total_start_time
@@ -199,12 +225,22 @@ class BenchmarkProcessor:
             gpu_memory_end = torch.cuda.memory_allocated(device) / (1024 * 1024)  # MB
             gpu_memory_delta = gpu_memory_end - gpu_memory_start
             peak_memory_usage = torch.cuda.max_memory_allocated(device) / (1024 * 1024)  # MB
+        elif device.type == 'mps':
+            try:
+                if hasattr(torch.mps, 'current_allocated_memory'):
+                    gpu_memory_end = torch.mps.current_allocated_memory() / (1024 * 1024)  # MB
+                    gpu_memory_delta = gpu_memory_end - gpu_memory_start
+                peak_memory_usage = gpu_memory_end
+            except Exception as e:
+                logger.debug(f"無法獲取MPS記憶體結束狀態: {str(e)}")
+                gpu_memory_delta = 0
+                peak_memory_usage = 0
         score = self._calculate_performance_score(avg_time, (original_width, original_height), False, filtered_times)
         if step_callback:
             step_callback("長門櫻正在為主人整理測試結果...")
-        if device.type == 'cuda':
+        if device.type in ['cuda', 'mps']:
             test_tensor = None
-            torch.cuda.empty_cache()
+            sync_device_memory(device)
             gc.collect()
             log_gpu_memory(device, "測試結束後")
         if progress_callback:
@@ -446,10 +482,10 @@ class BenchmarkProcessor:
         }
         
     def _cleanup_enhancers(self, enhancers, device):
-        """清理所有enhancer實例並釋放顯存"""
+        """長門櫻會清理所有NS-IQE模型並釋放顯存"""
         try:
-            if device.type == 'cuda':
-                logger.debug(f"開始清理 {len(enhancers)} 個enhancer實例")
+            if device.type in ['cuda', 'mps']:
+                logger.debug(f"開始清理 {len(enhancers)} 個NS-IQE模型")
                 log_gpu_memory(device, "清理前")
                 for i in range(len(enhancers)):
                     if enhancers[i] is None:
@@ -465,19 +501,19 @@ class BenchmarkProcessor:
                             enhancers[i].processor = None
                     enhancers[i] = None  
                 enhancers.clear()
-                torch.cuda.empty_cache()
+                sync_device_memory(device)
                 gc.collect()
-                time.sleep(0.1) 
-                torch.cuda.empty_cache()
+                time.sleep(0.1)
+                sync_device_memory(device)
                 log_gpu_memory(device, "清理後")
         except Exception as e:
-            logger.error(f"清理enhancers時出錯: {str(e)}")
-            if device.type == 'cuda':
-                torch.cuda.empty_cache()
+            logger.error(f"清理NS-IQE模型時出錯: {str(e)}")
+            if device.type in ['cuda', 'mps']:
+                sync_device_memory(device)
                 gc.collect()
     
     def _determine_optimal_block_size(self, device):
-        """動態確定最佳區塊大小"""
+        """長門櫻會動態確定最佳區塊大小"""
         block_size = 128
         if device.type == 'cuda':
             try:
@@ -489,6 +525,12 @@ class BenchmarkProcessor:
                 logger.info(f"長門櫻根據主人的顯存情況（{free_memory / (1024**3):.2f} GB可用）選擇了 {block_size} 的區塊大小")
             except Exception as e:
                 logger.warning(f"長門櫻無法檢測主人的顯存情況，會使用保守的區塊大小: {str(e)}")
+        elif device.type == 'mps':
+            block_size = 256
+            logger.info(f"長門櫻為MPS設備選擇了 {block_size} 的區塊大小")
+        else:
+            block_size = 256
+            logger.info(f"長門櫻為CPU設備選擇了 {block_size} 的區塊大小")
         return block_size
     
     def _warmup_model(self, model, test_tensor, device, use_amp, step_callback=None, warmup_iterations=3):
@@ -508,8 +550,15 @@ class BenchmarkProcessor:
                     torch.cuda.synchronize()
                     if i < warmup_iterations - 1:
                         torch.cuda.empty_cache()
+                elif device.type == 'mps':
+                    if hasattr(torch.mps, 'synchronize'):
+                        torch.mps.synchronize()
+                    if i < warmup_iterations - 1 and hasattr(torch.mps, 'empty_cache'):
+                        torch.mps.empty_cache()
         if device.type == 'cuda':
             torch.cuda.empty_cache()
+        elif device.type == 'mps' and hasattr(torch.mps, 'empty_cache'):
+            torch.mps.empty_cache()
         gc.collect()
     
     def stop(self):
@@ -519,6 +568,8 @@ class BenchmarkProcessor:
     def _should_use_amp(self, device):
         """長門櫻會貼心判斷主人的顯卡是否適合使用混合精度計算"""
         if device.type != 'cuda':
+            if device.type == 'mps':
+                logger.info("長門櫻檢測到MPS設備，MPS暫不支援混合精度計算")
             return False
         try:
             gpu_name = torch.cuda.get_device_name(device)

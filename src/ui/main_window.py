@@ -119,6 +119,17 @@ class ImageEnhancerApp(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Yes:
                 self.register_and_use_model(model_path)
+            else:
+                current_registered = self.model_manager.get_registered_model_path()
+                if not current_registered:
+                    success = self.model_manager.register_model(model_path)
+                    if success:
+                        self.statusBar.showMessage(f"模型 {model_name} 已下載完成並設為可用模型", 5000)
+                        self.notify_tabs_registered_model_changed(model_path)
+                    else:
+                        self.statusBar.showMessage(f"模型 {model_name} 已下載完成但註冊失敗", 5000)
+                else:
+                    self.statusBar.showMessage(f"模型 {model_name} 已下載完成並可在模型列表中使用", 5000)
 
     def on_model_imported(self, model_path):
         """處理模型匯入完成事件"""
@@ -174,7 +185,7 @@ class ImageEnhancerApp(QMainWindow):
 
     def reload_all_tabs_models(self):
         """重新載入所有分頁的模型列表"""
-        self.model_manager.scan_models_directory()
+
         
         tabs = [self.image_tab, self.video_tab, self.training_tab, self.assessment_tab]
         for tab in tabs:

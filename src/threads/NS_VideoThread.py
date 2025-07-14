@@ -13,7 +13,7 @@ from PIL import Image
 from PyQt6.QtCore import QThread, pyqtSignal
 import logging
 
-from src.processing.NS_PatchProcessor import process_image_in_patches
+from src.processing.NS_PatchProcessor import process_image_in_patches, ImageBlockProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +60,16 @@ class VideoEnhancerThread(QThread):
                 logger.info("使用自動混合精度計算模式 (自動偵測結果)")
             else:
                 logger.info("使用標準精度計算模式 (自動偵測結果)")
+        elif device.type == 'mps':
+            logger.info(f"使用MPS設備: Apple Metal GPU")
+            logger.info(f"混合精度計算: 禁用 (MPS不支援)")
+        else:
+            logger.info(f"使用CPU作為計算設備")
 
     def _should_use_amp(self, device):
         if device.type != 'cuda':
+            if device.type == 'mps':
+                logger.info("檢測到MPS設備，MPS不支援混合精度計算")
             return False
         gpu_name = torch.cuda.get_device_name(device)
         logger.info(f"正在檢測GPU '{gpu_name}' 是否適合使用混合精度...")
@@ -255,6 +262,7 @@ class VideoEnhancerThread(QThread):
             if total_input_frames == 0:
                 raise Exception("未能提取任何有效的視頻幀")
             self.progress_signal.emit(40, 100, f"開始處理 {total_input_frames} 個幀")
+            ImageBlockProcessor.reset_logging_state()
             for i, frame_path in enumerate(input_frames):
                 if self.stop_flag.is_set():
                     break
@@ -357,7 +365,8 @@ class VideoEnhancerThread(QThread):
             overlap=self.overlap,
             use_weight_mask=self.use_weight_mask,
             blending_mode=self.blending_mode,
-            use_amp=self.use_amp
+            use_amp=self.use_amp,
+            reset_logging=False 
         )
         enhanced_image = enhancer.process()
         if target_width and target_height:

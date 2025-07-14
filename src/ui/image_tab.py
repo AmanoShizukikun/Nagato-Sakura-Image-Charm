@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLa
                             QGroupBox, QMessageBox, QSlider, QSplitter, QFrame, QToolButton,
                             QScrollArea, QRadioButton, QLineEdit, QButtonGroup, QGridLayout,
                             QDoubleSpinBox)
-from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal, QEvent
 from PyQt6.QtGui import QIntValidator, QDoubleValidator
 
 from src.ui.views import MultiViewWidget
@@ -34,19 +34,21 @@ class ClassifierThread(QThread):
             if not self.classifier.is_model_loaded():
                 if not self.classifier.load_model():
                     self.error.emit("未能載入分類模型")
-                    return
-                    
+                    return     
             image = Image.open(self.image_path).convert('RGB')
             result = self.classifier.classify_image(image)
-            
             if not result["success"]:
                 self.error.emit(f"分類失敗: {result.get('error', '未知錯誤')}")
                 return
-                
             self.resultReady.emit(result)
-            
         except Exception as e:
             self.error.emit(f"分類過程出錯: {str(e)}")
+        finally:
+            try:
+                if hasattr(self, 'classifier'):
+                    self.classifier = None
+            except:
+                pass
 
 class CollapsibleBox(QWidget):
     """可折疊的參數區塊"""
@@ -268,13 +270,11 @@ class ImageProcessingTab(QWidget):
         self.img_status_label = QLabel("等待處理...")
         progress_layout.addWidget(self.img_status_label, 2)
         self.recommended_model_label = QLabel("推薦模型: --")
-        self.recommended_model_label.setStyleSheet("color: white; font-weight: bold;")
+        self.recommended_model_label.setStyleSheet("font-weight: bold;")
         progress_layout.addWidget(self.recommended_model_label, 2)
         self.model_status_label = QLabel("模型狀態: 未載入")
         progress_layout.addWidget(self.model_status_label, 1)
         preview_layout.addLayout(progress_layout)
-        
-        # ==================== 參數面板優化區域 ====================
         params_widget = QWidget()
         params_layout = QVBoxLayout(params_widget)
         params_layout.setContentsMargins(0, 0, 0, 0)
@@ -282,12 +282,8 @@ class ImageProcessingTab(QWidget):
         params_header.setStyleSheet("font-size: 14px; font-weight: bold;")
         params_layout.addWidget(params_header)
         params_content_layout = QHBoxLayout()
-        
-        # ==================== 第一列：模型參數 ====================
         column1_layout = QVBoxLayout()
         column1_layout.setSpacing(10)
-        
-        # === 模型選擇區塊 ===
         model_selection_box = CollapsibleBox("模型選擇")
         model_selection_layout = QGridLayout()
         model_selection_layout.setColumnStretch(1, 1) 
@@ -312,8 +308,6 @@ class ImageProcessingTab(QWidget):
         model_selection_layout.addLayout(strength_layout, 1, 1)
         model_selection_box.setContentLayout(model_selection_layout)
         column1_layout.addWidget(model_selection_box)
-        
-        # === 處理選項區塊 ===
         processing_options_box = CollapsibleBox("處理選項")
         processing_options_grid = QGridLayout()
         processing_options_grid.setColumnStretch(1, 1) 
@@ -328,10 +322,8 @@ class ImageProcessingTab(QWidget):
         device_options = get_device_options(self.system_info)
         for display_text, device_value in device_options:
             self.device_combo.addItem(display_text, device_value)
-        
         self.device_combo.setToolTip("自動選擇: 使用系統默認設備\nCUDA: 使用GPU處理（較快）\nCPU: 使用CPU處理（較穩定但較慢）")
         processing_options_grid.addWidget(self.device_combo, 1, 1)
-        
         processing_options_grid.addWidget(QLabel("混合精度:"), 2, 0)
         self.amp_combo = QComboBox()
         self.amp_combo.addItems(['自動偵測', '強制啟用', '強制禁用'])
@@ -342,12 +334,8 @@ class ImageProcessingTab(QWidget):
         processing_options_box.setContentLayout(processing_options_grid)
         column1_layout.addWidget(processing_options_box)
         column1_layout.addStretch(1)
-        
-        # ==================== 第二列：區塊處理參數 ====================
         column2_layout = QVBoxLayout()
         column2_layout.setSpacing(10)
-        
-        # === 區塊處理參數區塊 ===
         block_param_box = CollapsibleBox("區塊處理參數")
         block_param_grid = QGridLayout()
         block_param_grid.setColumnStretch(1, 1)
@@ -377,12 +365,8 @@ class ImageProcessingTab(QWidget):
         block_param_box.setContentLayout(block_param_grid)
         column2_layout.addWidget(block_param_box)
         column2_layout.addStretch(1)
-        
-        # ==================== 第三列：輸出尺寸設定 ====================
         column3_layout = QVBoxLayout()
         column3_layout.setSpacing(10)
-        
-        # === 輸出尺寸設定區塊 ===
         upscale_box = CollapsibleBox("輸出尺寸設定")
         upscale_layout = QVBoxLayout()
         upscale_layout.setSpacing(10)
@@ -484,25 +468,17 @@ class ImageProcessingTab(QWidget):
             self.enhance_button.setEnabled(True)
             self.save_button.setEnabled(False)
             self.enhanced_image = None
-            
-            # 運行圖像分類
             self.run_image_classification(file_path)
-            
             if self.parent:
                 self.parent.tab_widget.setCurrentIndex(0)
                 
     def run_image_classification(self, image_path):
         """運行圖像分類獲取推薦模型"""
-        # 停止之前正在運行的分類線程
         if self.classifier_thread and self.classifier_thread.isRunning():
             self.classifier_thread.terminate()
             self.classifier_thread.wait()
-        
-        # 更新UI狀態
         self.recommended_model_label.setText("推薦模型: 分析中...")
-        self.recommended_model_label.setStyleSheet("color: gray; font-weight: bold;")
-        
-        # 創建並啟動新的分類線程
+        self.update_recommended_model_style()
         self.classifier_thread = ClassifierThread(self.image_classifier, image_path)
         self.classifier_thread.resultReady.connect(self.on_classification_results)
         self.classifier_thread.error.connect(self.on_classification_error)
@@ -513,36 +489,62 @@ class ImageProcessingTab(QWidget):
         if result["success"]:
             top_class = result["top_class"]
             accuracy = result["top_probability"]
-            
             if top_class == "NULL":
                 self.recommended_model_label.setText("推薦模型: NULL")
-                self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+                self.update_recommended_model_style()
             else:
                 self.recommended_model_label.setText(f"推薦模型: {top_class} ({accuracy:.1f}%)")
-                self.recommended_model_label.setStyleSheet("color: white; font-weight: bold;")
-                
+                self.update_recommended_model_style()
             logging.info(f"圖像分類完成: 推薦模型 {top_class}，準確率: {accuracy:.2f}%")
-            
         else:
             self.recommended_model_label.setText("推薦模型: 分類失敗")
             self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+        try:
+            self.image_classifier.unload_model()
+            logging.info("圖像分類模型已自動卸載以釋放資源")
+        except Exception as e:
+            logging.error(f"自動卸載分類模型時出錯: {str(e)}")
 
     def on_classification_error(self, error_msg):
         """處理分類錯誤"""
         self.recommended_model_label.setText("推薦模型: 未安裝插件")
         self.recommended_model_label.setStyleSheet("color: #888; font-weight: bold;")
         logging.error(f"圖像分類錯誤: {error_msg}")
+        try:
+            self.image_classifier.unload_model()
+            logging.info("圖像分類模型已自動卸載以釋放資源")
+        except Exception as e:
+            logging.error(f"自動卸載分類模型時出錯: {str(e)}")
         
     def closeEvent(self, event):
         """確保在關閉時釋放資源"""
         if hasattr(self, 'classifier_thread') and self.classifier_thread and self.classifier_thread.isRunning():
             self.classifier_thread.terminate()
             self.classifier_thread.wait()
-            
         if hasattr(self, 'image_classifier'):
-            self.image_classifier.unload_model()
-            
+            self.image_classifier.unload_model() 
         event.accept()
+    
+    def changeEvent(self, event):
+        """處理系統主題變更事件"""
+        if event.type() == QEvent.Type.PaletteChange:
+            self.update_recommended_model_style()
+        super().changeEvent(event)
+    
+    def update_recommended_model_style(self):
+        """更新推薦模型標籤的樣式以適應當前主題"""
+        if hasattr(self, 'recommended_model_label'):
+            current_text = self.recommended_model_label.text()
+            if "NULL" in current_text:
+                self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+            elif "分析中" in current_text:
+                self.recommended_model_label.setStyleSheet("color: gray; font-weight: bold;")
+            elif "分類失敗" in current_text:
+                self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+            elif "未安裝插件" in current_text:
+                self.recommended_model_label.setStyleSheet("color: #888; font-weight: bold;")
+            else:
+                self.recommended_model_label.setStyleSheet("font-weight: bold;")
     
     def enhance_image(self):
         if not self.input_image_path:
@@ -577,6 +579,8 @@ class ImageProcessingTab(QWidget):
                 self.used_device_name = "自動選擇"
                 if device.type == "cuda":
                     self.used_device_name = f"自動選擇 - {get_device_name(device, self.system_info)}"
+                elif device.type == "mps":
+                    self.used_device_name = f"自動選擇 - {self.system_info.get('mps_device_name', 'Apple Silicon')} (MPS)"
                 else:
                     self.used_device_name = f"自動選擇 - {self.system_info.get('cpu_brand_model', 'CPU')} (CPU)"
                 logger.info(f"使用自動選擇的設備: {device}, {self.used_device_name}")
@@ -584,7 +588,6 @@ class ImageProcessingTab(QWidget):
                 device = torch.device(device_selection)
                 self.used_device_name = self.device_combo.currentText()
                 logger.info(f"使用手動選擇的設備: {device}, {self.used_device_name}")
-            
             block_size = self.block_size_spin.value()
             overlap = self.overlap_spin.value()
             use_weight_mask = self.weight_mask_check.isChecked()
@@ -643,7 +646,6 @@ class ImageProcessingTab(QWidget):
             self.enhancer_thread.progress_signal.connect(self.update_progress)
             self.enhancer_thread.finished_signal.connect(self.process_finished)
             self.enhancer_thread.start()
-            
         except Exception as e:
             logger.error(f"圖片處理過程中發生錯誤: {str(e)}")
             QMessageBox.critical(self, "錯誤", f"處理時出錯: {str(e)}")

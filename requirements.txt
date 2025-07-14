@@ -12,5 +12,3 @@ pynvml
 pandas
 Pillow
 numpy
-rarfile
-py7zr

@@ -10,9 +10,43 @@
 「長門桜-イメージチャーム」は「長門桜プロジェクト」の派生品であり、「長門桜」の画像コアをベースにした画像強化・評価のためのグラフィカルツールです。AI超解像、画像・動画の強化、品質評価などの機能をサポートしています。
 
 ## お知らせ
-計算リソースの不足と開発者の多忙により、バージョン1.1.1以降は長門桜-イメージチャームの開発を一時停止し、長門桜-イメージチャームトレーナー関連のリポジトリとDiscordバージョンのcogの完成を優先します。
+Apple Metal Performance Shaders (MPS) のサポートを追加しました。これにより、Appleシステムのハードウェアアクセラレーションが利用できるようになりました。
+NS-IC-Kairitsu-v7pro-370 および NS-IC-Ritsuka-LQ-v7-228(Beta) は内蔵モデルリストに含まれていません。Github model space からモデルをダウンロードしてください。
 
 ## 最近の変更
+### 1.2.1 (2025年7月15日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.1.jpg)
+### 重要な変更
+- 【重要】Apple Metal Performance Shaders (MPS) のサポートを追加しました。これにより、Appleシステムのハードウェアアクセラレーションが利用できるようになりました。
+- 【重要】ExtractUtility.py を削除し、解凍機能を廃止しました。
+### 新機能
+- 【新規】動画処理機能にNS-Cモデル推薦機能を追加しました。
+- 【更新】NS-Cモデルの呼び出し方式を最適化し、使用後にリソースが自動的に解放されるようになりました。
+- 【更新】ベンチマークテストの起動効率を最適化し、UIのブロックを回避するためにバックグラウンドスレッドでシステム情報を収集するようになりました。
+- 【修正】モデル推薦機能が一部のシステムやライトモードで使用できない問題を修正しました。
+- 【修正】動画処理機能で、MacOSで動画処理完了後にフォルダを開くダイアログでクラッシュする問題を修正しました。
+- 【修正】モデルが存在しない状態でモデルをダウンロードした後、新しいモデルのダイアログで「いいえ」を選択すると、モデルリストでそのモデルを選択しても使用できない問題を修正しました。
+### 既知の問題
+- 【バグ】超解像画像のプレビューサイズが元の画像と異なるため、直感的な比較が難しくなっています。
+- 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.2.0以降ではNagato-Sakura-Image-Quality-Assessment画像評価機能（約1MB）が強制的にプリインストールされます。
+- 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.2.0以降ではNagato-Sakura-Image-Classification (NS-C)モデル推薦機能（約16MB）が強制的にプリインストールされます。
+- 【バグ】MacOSで2つの画像が同時に存在する状態で完全画像評価機能を実行すると直接クラッシュする問題があります。
+- 【バグ】Linuxで2つの画像が同時に存在する状態で完全画像評価機能を実行すると、フォントの不足により直接クラッシュする問題があります。
+- 【バグ】MacOS、Linuxでダウンロードページの文字がプレビューボックスに重なって表示される問題があります。
+
+### 1.2.0 (2025年5月20日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.0.jpg)
+### 重要な変更
+- 【重要】Nagato-Sakura-Image-Classification (NS-C)画像分類モデルを正式にモデル推薦プラグインとしてシステムに導入しました。
+- 【重要】Nagato-Sakura-Image-Classification (NS-C)のモデル構造を変更し、元のResNet-19からより軽量なEfficientNet-B0に変更しました。
+### 新機能
+- 【新規】画像処理ページおよび画像評価ページにNS-C機能を追加し、入力画像に基づいて最適なNS-IQEモデルを推薦できるようになりました。
+- 【新規】Kairitsu第九世代汎用リアルJPEG圧縮復元モデル。
+### 既知の問題
+- 【バグ】超解像画像のプレビューサイズが元の画像と異なるため、直感的な比較が難しくなっています。
+- 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.2.0ではNagato-Sakura-Image-Quality-Assessment画像評価機能（約1MB）が強制的にプリインストールされます。
+- 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.2.0ではNagato-Sakura-Image-Classification (NS-C)モデル推薦機能（約16MB）が強制的にプリインストールされます。
+
 ### 1.1.1 (2025年5月04日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.1.jpg)
 ### 重要な変更
@@ -26,34 +60,6 @@
 - 【バグ】超解像画像のプレビューサイズが元の画像と異なるため、直感的な比較が難しくなっています。
 - 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.1.1ではNagato-Sakura-Image-Quality-Assessment画像評価機能（約1MB）が強制的にプリインストールされます。
 
-### 1.1.0 (2025年4月28日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.0.jpg)
-### 重要な変更
-- 【重要】計算デバイス選択機能を追加し、手動でCPUを強制的に有効にして画像・動画処理を行うことができるようになりました。
-### 新機能
-- 【新規】Ritsuka-HQ 第七世代アニメモザイク復元モデルを追加しました。
-- 【更新】ベンチマークテストのバランスを最適化し、メモリ割り当て戦略を調整、VRAMの割り当て戦略を改善、進捗バーの精度を最適化しました。
-- 【更新】計算デバイス選択機能で、CPU及びNVIDIA GPUのモデルを直接確認でき、複数デバイスの切り替えが容易になりました（NS_DeviceInfo.pyを新規追加）。
-- 【修正】モデルがない状態で外部モデルをインポートして登録した後、モデルが使用できない問題を修正しました。
-- 【修正】ベンチマークテストを切り替えるとVRAMが正常に解放されない問題を修正しました。
-### 既知の問題
-- 【バグ】画像評価コアが未完成のため、評価エラーが発生していました。（1.1.0で修正済み）
-- 【バグ】超解像画像のプレビューサイズが元の画像と異なるため、直感的な比較が難しくなっています。
-
-### 1.0.2 (2025年4月25日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.0.2.jpg)
-### 重要な変更
-- 【重要】ベンチマークテストを全面的に書き直しました。
-### 新機能
-- 【更新】ベンチマークテストのページを更新し、デバイスの性能差をより正確に判断でき、より視覚的に魅力的になりました。
-- 【修正】CPUでベンチマークテストを実行する際、異なるデバイス上のテンソルによるエラーを修正しました。
-- 【修正】ベンチマークテストでCPUモデルを正確に表示できるようになりました。
-- 【修正】異なるタイルサイズでモデルを実行した後、モデルが正常にアンロードされない問題を修正しました。
-### 既知の問題
-- 【バグ】画像評価コアが未完成のため、評価エラーが発生していました。（1.1.0で修正済み）
-- 【バグ】超解像画像のプレビューサイズが元の画像と異なるため、直感的な比較が難しくなっています。
-- 【バグ】モデルがない状態で外部モデルをインポートして登録した後、モデルが使用できない問題がありました。（1.1.0で修正済み）
-- 【修正】ベンチマークテストを切り替えるとVRAMが正常に解放されない問題がありました。（1.1.0で修正済み）
 
 [すべてのリリースバージョン](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/docs/Changelog.md)
 
@@ -92,15 +98,41 @@ python main.py
 ```
 
 ## モデル紹介
-### 鏡花（Kyouka） - アニメJPEG圧縮復元モデル
+### 鏡花（Kyouka） -《鏡花》- 砕け散った姿を、鏡の中で元の形に再構築する。鏡の中の花は幻ではなく、砕け散った姿は皆映し出される。
 <p align="center">
   <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Kyouka_comparison.webp">
 </p>
 
-### 律花（Ritsuka） - アニメモザイク復元モデル
+- ### モデルバージョン: v6 (Kyouka-MQ は v7)
+- ### 訓練パラメータ: 10K
+- ### 適用シーン: アニメJPEG圧縮復元
+
+| Model            |   Type    |                              Download                                 |  
+|:----------------:|:---------:|:---------------------------------------------------------------------:|
+| Kyouka-v6-314    |   NULL    | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+| Kyouka-LQ-v6-310 |    LQ     | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+| Kyouka-MQ-v7-349 |    MQ     | [🤗 Huggingface](https://huggingface.co/AmanoShizukikun/NS-IC-Kyouka) |
+<br/>
+
+### 界律（Kairitsu） -《界律》- 幻象の法則が砕けた時の因果を再編し、封じられた記憶が鮮明な輪郭として再現される。
+<p align="center">
+  <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Kairitsu_comparison.webp">
+</p>
+
+- ### モデルバージョン: v9 
+- ### 訓練パラメータ: 25K
+- ### 適用シーン: リアルJPEG圧縮復元
+<br/>
+
+### 律花（Ritsuka） -《断律》- 格子状の影のブロックは、秩序断絶の残響である。光と影のリズムの中で、真実の形が復活する。
 <p align="center">
   <img src="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/samples/Ritsuka_comparison.webp">
 </p>
+
+- ### モデルバージョン: v7
+- ### 訓練パラメータ: 10K
+- ### 適用シーン: アニメモザイク復元
+<br/>
 
 
 ## TODO
@@ -116,12 +148,12 @@ python main.py
     - [x] 計算デバイス選択機能。
     - [x] 実際のシナリオに合ったベンチマークテスト。
     - [x] 隠されたイースターエッグ。
-    - [ ] GUIトレーナーの更新（第5世代 → 第7世代）。
+    - [ ] GUIトレーナーの更新。
     - [ ] 拡張プラグイン管理機能。
     
   - モデル
-    - [ ] 次世代モデルアーキテクチャの開発（既存のモデルアーキテクチャの限界に達しています）。
-    - [x] 第6世代《鏡花・碎象還映》Kyouka 汎用アニメ画像JPEG圧縮復元モデル。
+    - [x] VGG損失関数の導入。
+    - [x] 第6世代《鏡花・砕象還映》Kyouka 汎用アニメ画像JPEG圧縮復元モデル。
     - [x] 第6世代《鏡花・幽映深層》Kyouka-LQ 低品質特化アニメ画像JPEG圧縮復元モデル。
     - [x] 第7世代《鏡花・霞緲輪影》Kyouka-MQ 通常品質特化アニメ画像JPEG圧縮復元モデル。
     - [x] 第7世代《断律・映格輪廻》Ritsuka-HQ 2〜4ピクセルモザイク復元モデル。
@@ -129,14 +161,16 @@ python main.py
 
   - その他
     - [ ] Discordボットバージョンのcog。
-    - [ ] モデルトレーナーGithubリポジトリの設定。
+    - [x] モデルトレーナーGithubリポジトリの設置。
 
 ## 謝辞
 以下のプロジェクトと貢献者に特に感謝します：
 
 ### プロジェクト
 - [Nagato-Sakura-Discord-Bot-py](https://github.com/AmanoShizukikun/Nagato-Sakura-Discord-Bot-py)
+- [Nagato-Sakura-Image-Charm-Trainer](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm-Trainer)
 - [Nagato-Sakura-Image-Quality-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Classification)
+- [Nagato-Sakura-Image-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Classification)
 
 ### 貢献者
 <a href="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/graphs/contributors" target="_blank">

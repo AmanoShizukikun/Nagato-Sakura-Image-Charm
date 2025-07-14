@@ -24,7 +24,10 @@ class ClassificationWorker(QThread):
     error = pyqtSignal(str)
     def __init__(self, classifier=None, image=None, is_image_a=True):
         super().__init__()
-        self.classifier = classifier or ImageClassifier()
+        if classifier is None:
+            self.classifier = ImageClassifier()
+        else:
+            self.classifier = classifier
         self.image = image
         self.is_image_a = is_image_a
         
@@ -38,10 +41,14 @@ class ClassificationWorker(QThread):
             if self.image is None:
                 self.error.emit("未提供圖像進行分類")
                 return
-                
+            if self.classifier is None:
+                logging.warning("分類器為None，創建新的分類器實例")
+                self.classifier = ImageClassifier()
+            if self.classifier is None:
+                self.error.emit("分類器初始化失敗")
+                return
             if not self.classifier.is_model_loaded():
                 if not self.classifier.load_model():
-                    # 發送未檢測到模型的結果
                     if self.is_image_a:
                         self.resultReady.emit({
                             "model_a": "未偵測到模型",
@@ -53,12 +60,9 @@ class ClassificationWorker(QThread):
                             "model_b_acc": None
                         })
                     return
-            
             result = self.classifier.classify_image(self.image)
-            
             if not result["success"]:
                 if "model not found" in result.get("error", "").lower():
-                    # 模型不存在的情況
                     if self.is_image_a:
                         self.resultReady.emit({
                             "model_a": "未偵測到模型",
@@ -70,19 +74,12 @@ class ClassificationWorker(QThread):
                             "model_b_acc": None
                         })
                 else:
-                    # 其他錯誤
                     self.error.emit(f"分類失敗: {result.get('error', '未知錯誤')}")
                 return
-                
-            # 準備結果數據
             top_class = result["top_class"]
             top_probability = result["top_probability"]
-            
-            # 檢查是否為NULL
             if top_class is None:
                 top_class = "NULL"
-            
-            # 發送分類結果
             if self.is_image_a:
                 self.resultReady.emit({
                     "model_a": top_class,
@@ -93,10 +90,15 @@ class ClassificationWorker(QThread):
                     "model_b": top_class,
                     "model_b_acc": top_probability
                 })
-                
         except Exception as e:
             logging.error(f"圖像分類過程出錯: {e}")
             self.error.emit(f"分類失敗: {str(e)}")
+        finally:
+            try:
+                if hasattr(self, 'image'):
+                    self.image = None
+            except:
+                pass
 
 class AssessmentWorker(QThread):
     """用於處理圖像評估的工作線程"""
@@ -587,7 +589,7 @@ class AssessmentTab(QWidget):
         
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(6, 6, 6, 6)
+        main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.setSpacing(6)
         compare_widget = self.create_single_compare_tab()
         main_layout.addWidget(compare_widget)
@@ -730,8 +732,6 @@ class AssessmentTab(QWidget):
                     self.multi_view.image_b_name if current_image_b else None
                 )
                 self.multi_view.image_a_group.setTitle(f"圖像A: {os.path.basename(file_path)}")
-                
-                # 同時執行品質評分和圖像分類
                 self.run_single_image_scoring(image_a, file_path, True)
                 self.run_single_image_classification(image_a, True)
                 
@@ -757,8 +757,6 @@ class AssessmentTab(QWidget):
                     f"圖B: {os.path.basename(file_path)}"
                 )
                 self.multi_view.image_b_group.setTitle(f"圖像B: {os.path.basename(file_path)}")
-                
-                # 同時執行品質評分和圖像分類
                 self.run_single_image_scoring(image_b, file_path, False)
                 self.run_single_image_classification(image_b, False)
                 
@@ -810,7 +808,6 @@ class AssessmentTab(QWidget):
             if "model_a" in results:
                 model_a = results.get('model_a')
                 acc_a = results.get('model_a_acc')
-                
                 if model_a == "未偵測到模型":
                     logging.info("圖A分類完成: 未偵測到模型")
                 elif model_a == "NULL":
@@ -819,11 +816,9 @@ class AssessmentTab(QWidget):
                     logging.info(f"圖A分類完成: 推薦使用 {model_a} 模型, 準確率: {acc_a:.2f}%")
                 else:
                     logging.info(f"圖A分類完成: 推薦使用 {model_a} 模型, 準確率: 未知")
-                    
             elif "model_b" in results:
                 model_b = results.get('model_b')
                 acc_b = results.get('model_b_acc')
-                
                 if model_b == "未偵測到模型":
                     logging.info("圖B分類完成: 未偵測到模型")
                 elif model_b == "NULL":
@@ -832,11 +827,25 @@ class AssessmentTab(QWidget):
                     logging.info(f"圖B分類完成: 推薦使用 {model_b} 模型, 準確率: {acc_b:.2f}%")
                 else:
                     logging.info(f"圖B分類完成: 推薦使用 {model_b} 模型, 準確率: 未知")
+        self._check_and_unload_classification_model()
+
+    def _check_and_unload_classification_model(self):
+        """檢查並卸載分類模型，只有在兩個工作線程都不活躍時才卸載"""
+        try:
+            a_running = self.classifier_worker_a and self.classifier_worker_a.isRunning()
+            b_running = self.classifier_worker_b and self.classifier_worker_b.isRunning()
+            if not a_running and not b_running:
+                if hasattr(self, 'image_classifier'):
+                    self.image_classifier.unload_model()
+                    logging.info("圖像分類模型已自動卸載以釋放資源")
+        except Exception as e:
+            logging.error(f"自動卸載分類模型時出錯: {str(e)}")
 
     @pyqtSlot(str)
     def on_classification_error(self, error_msg):
         """處理分類錯誤"""
         logging.error(f"圖像分類錯誤: {error_msg}")
+        self._check_and_unload_classification_model()
 
     @pyqtSlot(object, str, str)
     def on_image_a_score_ready(self, score, file_name, size_info):
@@ -844,7 +853,7 @@ class AssessmentTab(QWidget):
         results = {'ai_score_a': score}
         self.metric_display.update_metrics(results)
         if score is not None:
-            logging.info(f"圖A評分完成: {score:.2f}")
+            logging.info(f"圖A 評分完成")
         else:
             logging.warning("圖A評分: 未偵測到模型")
 
@@ -854,7 +863,7 @@ class AssessmentTab(QWidget):
         results = {'ai_score_b': score}
         self.metric_display.update_metrics(results)
         if score is not None:
-            logging.info(f"圖B評分完成: {score:.2f}")
+            logging.info(f"圖B 評分完成")
         else:
             logging.warning("圖B評分: 未偵測到模型")
 
@@ -950,8 +959,6 @@ class AssessmentTab(QWidget):
         """交換圖A和圖B"""
         if self.multi_view.image_a is None or self.multi_view.image_b is None:
             return 
-        
-        # 交換圖像
         image_a = self.multi_view.image_a
         image_b = self.multi_view.image_b
         name_a = self.multi_view.image_a_name
@@ -959,21 +966,16 @@ class AssessmentTab(QWidget):
         title_a = self.multi_view.image_a_group.title()
         title_b = self.multi_view.image_b_group.title()
         self.load_img_a_path, self.load_img_b_path = self.load_img_b_path, self.load_img_a_path
-        
         self.multi_view.set_images(
             image_b,
             image_a,
             name_b,
             name_a
         )
-        
         self.multi_view.image_a_group.setTitle(title_b)
         self.multi_view.image_b_group.setTitle(title_a)
-        
-        # 交換AI評分
         score_a_text = self.metric_display.metrics["ai_score_a"].text()
         score_b_text = self.metric_display.metrics["ai_score_b"].text()
-        
         if score_a_text != "--" and score_b_text != "--":
             if score_a_text == "未偵測到模型" and score_b_text == "未偵測到模型":
                 self.metric_display.update_metrics({
@@ -995,13 +997,10 @@ class AssessmentTab(QWidget):
                     'ai_score_a': float(score_b_text),
                     'ai_score_b': float(score_a_text)
                 })
-        
-        # 交換模型推薦
         model_a_text = self.metric_display.metrics["model_a"].text()
         model_b_text = self.metric_display.metrics["model_b"].text()
         model_a_acc_text = self.metric_display.metrics["model_a_acc"].text()
         model_b_acc_text = self.metric_display.metrics["model_b_acc"].text()
-        
         if model_a_text != "--" and model_b_text != "--":
             try:
                 model_a_acc = float(model_a_acc_text.replace("%", ""))
@@ -1014,14 +1013,11 @@ class AssessmentTab(QWidget):
                 })
             except ValueError:
                 pass
-        
         logging.info("已交換圖A和圖B的位置")
         self.run_assessment(keep_ai_scores=True)
-        
-        # 重新執行圖像分類
         if image_a and image_b:
-            self.run_single_image_classification(image_b, True)  # 圖B變成圖A
-            self.run_single_image_classification(image_a, False)  # 圖A變成圖B
+            self.run_single_image_classification(image_b, True)
+            self.run_single_image_classification(image_a, False)
 
     def clear_results(self):
         """清空所有結果顯示，包括AI評分和模型推薦"""
@@ -1079,9 +1075,6 @@ class AssessmentTab(QWidget):
         if self.classifier_worker_b and self.classifier_worker_b.isRunning():
             self.classifier_worker_b.terminate()
             self.classifier_worker_b.wait()
-        
-        # 釋放分類器
         if hasattr(self, 'image_classifier'):
             self.image_classifier.unload_model()
-        
         event.accept()

@@ -13,15 +13,40 @@ from PyQt6.QtWidgets import (
     QSpinBox, QMessageBox, QFrame, QTabWidget, QSplitter, QSizePolicy,
     QSpacerItem, QGridLayout, QStyle
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QPropertyAnimation, QEasingCurve, pyqtProperty
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QSize, QPropertyAnimation, QEasingCurve, pyqtProperty, QTimer
 from PyQt6.QtGui import QGuiApplication, QFont, QIcon
 
 from src.ui.main_window import ImageEnhancerApp
 from src.processing.NS_Benchmark import BenchmarkProcessor, BenchmarkWorker
-from src.utils.NS_DeviceInfo import get_system_info, get_device_options, get_device_name
+from src.utils.NS_DeviceInfo import get_system_info, get_device_options, get_device_name, SystemInfo
 
 
 logger = logging.getLogger(__name__)
+
+class SystemInfoWorker(QThread):
+    """在背景執行緒中收集系統資訊以避免UI阻塞"""
+    info_collected = pyqtSignal(dict)
+    progress_updated = pyqtSignal(str)
+    
+    def run(self):
+        """收集系統資訊"""
+        try:
+            system_info = SystemInfo.collect_device_info()
+            self.info_collected.emit(system_info)
+        except Exception as e:
+            logger.error(f"收集系統資訊時發生錯誤: {str(e)}")
+            basic_info = {
+                'os': '未知作業系統',
+                'cpu_info': '未知 CPU',
+                'memory_info': '未知記憶體',
+                'gpu_info': '未檢測到GPU',
+                'gpu_memory_info': '不適用',
+                'has_cuda': torch.cuda.is_available(),
+                'has_mps': hasattr(torch.backends, 'mps') and torch.backends.mps.is_available(),
+                'is_low_memory_gpu': False,
+                'pytorch_version': torch.__version__
+            }
+            self.info_collected.emit(basic_info)
 
 # --- 主介面 ---
 class CardFrame(QFrame):
@@ -206,7 +231,19 @@ class BenchmarkDialog(QDialog):
         self.benchmark_processor = BenchmarkProcessor(self.model_manager)
         self.benchmark_worker = None
         self.results = {}
-        self.system_info = get_system_info()
+        self.system_info = {
+            'os': "長門櫻正在讀取中...",
+            'cpu_info': "長門櫻正在讀取中...",
+            'memory_info': "長門櫻正在讀取中...",
+            'gpu_info': "長門櫻正在讀取中...",
+            'gpu_memory_info': "長門櫻正在讀取中...",
+            'pytorch_version': "長門櫻正在讀取中...",
+            'has_cuda': torch.cuda.is_available(),
+            'has_mps': hasattr(torch.backends, 'mps') and torch.backends.mps.is_available(),
+            'is_low_memory_gpu': False,
+            'system_info_ready': False
+        }
+        self.system_info_ready = False
         self.expected_iterations = 0 
         self.setWindowTitle("基準測試")
         self.setMinimumWidth(980)
@@ -270,7 +307,10 @@ class BenchmarkDialog(QDialog):
         """)
         self.initUI()
         self.populateSystemInfo()
-        self.checkMemoryAvailability()
+        self.system_info_worker = SystemInfoWorker()
+        self.system_info_worker.info_collected.connect(self.on_system_info_collected)
+        self.system_info_worker.progress_updated.connect(self.on_progress_updated)
+        self.system_info_worker.start()
 
     def initUI(self):
         main_layout = QVBoxLayout(self)
@@ -281,7 +321,7 @@ class BenchmarkDialog(QDialog):
         subtitle = QLabel("長門櫻會幫主人評估系統處理圖像時的性能，並提供詳細的分析報告")
         subtitle.setStyleSheet("color: #b0b8c1; font-size: 11.5pt;")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        version = QLabel(f"版本: {self.system_info['app_version'] if 'app_version' in self.system_info else ImageEnhancerApp.version}")
+        version = QLabel(f"版本: {ImageEnhancerApp.version}")
         version.setStyleSheet("color: #888; font-size: 10pt;")
         version.setAlignment(Qt.AlignmentFlag.AlignLeft)
         main_layout.addWidget(title)
@@ -351,9 +391,8 @@ class BenchmarkDialog(QDialog):
         form_layout.setHorizontalSpacing(18)
         form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self.device_combo = QComboBox()
-        device_options = get_device_options(self.system_info)
-        for display_text, device_value in device_options:
-            self.device_combo.addItem(display_text, device_value)
+        self.device_combo.addItem("正在載入設備資訊...", None)
+        self.device_combo.setEnabled(False)
         form_layout.addRow("計算設備：", self.device_combo)
         self.amp_combo = QComboBox()
         self.amp_combo.addItems(["自動偵測", "強制啟用", "強制禁用"])
@@ -445,6 +484,39 @@ class BenchmarkDialog(QDialog):
         layout.addWidget(tabs)
         return page
 
+    # --- 系統資訊處理 ---
+    def on_progress_updated(self, message):
+        """更新進度顯示 - 已禁用載入狀態指示器"""
+        pass
+        
+    def on_system_info_collected(self, system_info):
+        """系統資訊收集完成時的回調"""
+        self.system_info = system_info
+        self.system_info_ready = True
+        self.populateSystemInfo()
+        self.checkMemoryAvailability()
+        self.updateDeviceCombo()
+        logger.info("系統資訊收集完成，基準測試對話框已準備就緒")
+        
+    def updateDeviceCombo(self):
+        """更新設備選擇下拉框"""
+        try:
+            current_selection = self.device_combo.currentData()
+            self.device_combo.clear()
+            device_options = get_device_options(self.system_info)
+            for display_text, device_value in device_options:
+                self.device_combo.addItem(display_text, device_value)
+            if current_selection:
+                for i in range(self.device_combo.count()):
+                    if self.device_combo.itemData(i) == current_selection:
+                        self.device_combo.setCurrentIndex(i)
+                        break
+            self.device_combo.setEnabled(True)
+        except Exception as e:
+            logger.error(f"更新設備選擇時發生錯誤: {str(e)}")
+            self.device_combo.addItem("設備載入失敗", None)
+            self.device_combo.setEnabled(False)
+
     # --- UI 行為 ---
     def updateSettingsVisibility(self):
         is_real_usage = self.test_mode_combo.currentText() == "實際場景測試"
@@ -462,13 +534,13 @@ class BenchmarkDialog(QDialog):
     def populateSystemInfo(self):
         """使用已收集的系統資訊填充系統信息卡片"""
         try:
-            self.system_card.setValue("os", self.system_info.get('os', "未知作業系統"))
-            self.system_card.setValue("cpu", self.system_info.get('cpu_info', "未知 CPU"))
-            self.system_card.setValue("memory", self.system_info.get('memory_info', "未知記憶體"))
-            self.system_card.setValue("gpu", self.system_info.get('gpu_info', "未檢測到GPU"))
-            self.system_card.setValue("gpu_memory", self.system_info.get('gpu_memory_info', "不適用"))
+            self.system_card.setValue("os", self.system_info.get('os', "長門櫻正在讀取中..."))
+            self.system_card.setValue("cpu", self.system_info.get('cpu_info', "長門櫻正在讀取中..."))
+            self.system_card.setValue("memory", self.system_info.get('memory_info', "長門櫻正在讀取中..."))
+            self.system_card.setValue("gpu", self.system_info.get('gpu_info', "長門櫻正在讀取中..."))
+            self.system_card.setValue("gpu_memory", self.system_info.get('gpu_memory_info', "長門櫻正在讀取中..."))
             self.system_card.setValue("version", self.system_info.get('app_version', ImageEnhancerApp.version))
-            self.system_card.setValue("pytorch", self.system_info.get('pytorch_version', "未知"))
+            self.system_card.setValue("pytorch", self.system_info.get('pytorch_version', "長門櫻正在讀取中..."))
         except Exception as e:
             logger.error(f"長門櫻在填充系統資訊時遇到困難: {str(e)}")
             for key in ["os", "cpu", "memory", "gpu", "gpu_memory"]:
@@ -476,7 +548,7 @@ class BenchmarkDialog(QDialog):
 
     def checkMemoryAvailability(self):
         """檢查顯存可用性並調整參數，使用已收集的系統資訊"""
-        if not self.system_info.get('has_cuda', False):
+        if not self.system_info_ready or not self.system_info.get('has_cuda', False):
             return
         try:
             if self.system_info.get('is_low_memory_gpu', False):
@@ -497,7 +569,13 @@ class BenchmarkDialog(QDialog):
     # --- 執行測試 ---
     def startBenchmark(self):
         try:
+            if not self.system_info_ready:
+                QMessageBox.warning(self, "長門櫻提醒", "系統資訊尚未載入完成，請稍等片刻再試...")
+                return
             device_selection = self.device_combo.currentData()
+            if device_selection is None:
+                QMessageBox.warning(self, "長門櫻提醒", "請等待設備資訊載入完成...")
+                return
             device = self.model_manager.get_device() if device_selection == "auto" else torch.device(device_selection)
             if not self.model_manager.get_registered_model_path():
                 QMessageBox.warning(self, "長門櫻提醒", "主人~請先在主界面選擇一個模型，長門櫻才能為您執行基準測試")
@@ -691,6 +769,10 @@ class BenchmarkDialog(QDialog):
         QMessageBox.information(self, "長門櫻", "主人~長門櫻已經把測試結果複製到剪貼板囉")
 
     def closeEvent(self, event):
+        if hasattr(self, 'system_info_worker') and self.system_info_worker.isRunning():
+            self.system_info_worker.terminate()
+            self.system_info_worker.wait(1000)
+            
         if self.benchmark_worker and self.benchmark_worker.isRunning():
             reply = QMessageBox.question(self, "長門櫻請求確認",
                 "主人~長門櫻還在為您進行基準測試中，確定要中止測試並關閉嗎？",

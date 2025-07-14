@@ -51,12 +51,17 @@ class EnhancerThread(QThread):
             logging.info(f"使用GPU: {gpu_name}")
             logging.info(f"CUDA版本: {torch.version.cuda}")
             logging.info(f"混合精度計算: {'啟用' if self.use_amp else '禁用'}")
+        elif device.type == 'mps':
+            logging.info(f"使用MPS設備: Apple Metal GPU")
+            logging.info(f"混合精度計算: 禁用 (MPS不支援)")
         else:
             logging.info(f"使用CPU作為計算設備")
     
     def _should_use_amp(self, device):
         """自動檢測是否應使用混合精度計算"""
         if device.type != 'cuda':
+            if device.type == 'mps':
+                logging.info("檢測到MPS設備，MPS不支援混合精度計算")
             return False
         gpu_name = torch.cuda.get_device_name(device)
         logging.info(f"正在檢測GPU '{gpu_name}' 是否適合使用混合精度...")

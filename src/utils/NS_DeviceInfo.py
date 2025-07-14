@@ -2,6 +2,8 @@ import os
 import platform
 import logging
 import torch
+import concurrent.futures
+import time
 
 try:
     import cpuinfo
@@ -14,6 +16,27 @@ except ImportError:
     pynvml = None
 
 logger = logging.getLogger(__name__)
+
+def _safe_call_with_timeout(func, timeout=5.0, default=None):
+    """
+    安全地調用函數，設置超時時間
+    Args:
+        func: 要調用的函數
+        timeout: 超時時間（秒）
+        default: 超時或錯誤時返回的預設值
+    Returns:
+        函數的返回值，或預設值
+    """
+    try:
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(func)
+            return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError:
+        logger.warning(f"函數 {func.__name__} 執行超時 ({timeout}s)")
+        return default
+    except Exception as e:
+        logger.warning(f"函數 {func.__name__} 執行出錯: {str(e)}")
+        return default
 
 class SystemInfo:
     """用於收集和提供系統與設備資訊的工具類"""
@@ -45,28 +68,35 @@ class SystemInfo:
             system_info['os'] = "未知作業系統"
         try:
             if cpuinfo:
-                cpu_info_dict = cpuinfo.get_cpu_info()
-                cpu_brand = cpu_info_dict.get('brand_raw', platform.processor() or "未知 CPU")
-                if " CPU " in cpu_brand:
-                    cpu_brand_model = cpu_brand.split(" CPU ")[0]
-                elif " with " in cpu_brand:
-                    cpu_brand_model = cpu_brand.split(" with ")[0]
-                elif "@" in cpu_brand:
-                    cpu_brand_model = cpu_brand.split("@")[0].strip()
+                cpu_info_dict = _safe_call_with_timeout(cpuinfo.get_cpu_info, timeout=3.0)
+                if cpu_info_dict:
+                    cpu_brand = cpu_info_dict.get('brand_raw', platform.processor() or "未知 CPU")
+                    if " CPU " in cpu_brand:
+                        cpu_brand_model = cpu_brand.split(" CPU ")[0]
+                    elif " with " in cpu_brand:
+                        cpu_brand_model = cpu_brand.split(" with ")[0]
+                    elif "@" in cpu_brand:
+                        cpu_brand_model = cpu_brand.split("@")[0].strip()
+                    else:
+                        cpu_brand_model = cpu_brand
+                    try:
+                        import psutil
+                        cpu_count = psutil.cpu_count(logical=True)
+                        physical_cpu_count = psutil.cpu_count(logical=False)
+                    except ImportError:
+                        cpu_count = os.cpu_count() or 1
+                        physical_cpu_count = cpu_count
+                    system_info['cpu_brand'] = cpu_brand
+                    system_info['cpu_brand_model'] = cpu_brand_model
+                    system_info['cpu_count'] = cpu_count
+                    system_info['physical_cpu_count'] = physical_cpu_count
+                    system_info['cpu_info'] = f"{cpu_brand} ({physical_cpu_count} 核, {cpu_count} 緒)"
                 else:
-                    cpu_brand_model = cpu_brand
-                try:
-                    import psutil
-                    cpu_count = psutil.cpu_count(logical=True)
-                    physical_cpu_count = psutil.cpu_count(logical=False)
-                except ImportError:
+                    cpu_brand_model = platform.processor() or "未知 CPU"
                     cpu_count = os.cpu_count() or 1
-                    physical_cpu_count = cpu_count
-                system_info['cpu_brand'] = cpu_brand
-                system_info['cpu_brand_model'] = cpu_brand_model
-                system_info['cpu_count'] = cpu_count
-                system_info['physical_cpu_count'] = physical_cpu_count
-                system_info['cpu_info'] = f"{cpu_brand} ({physical_cpu_count} 核, {cpu_count} 緒)"
+                    system_info['cpu_brand_model'] = cpu_brand_model
+                    system_info['cpu_count'] = cpu_count
+                    system_info['cpu_info'] = f"{cpu_brand_model} ({cpu_count} 緒)"
             else:
                 cpu_brand_model = platform.processor() or "未知 CPU"
                 cpu_count = os.cpu_count() or 1
@@ -90,6 +120,7 @@ class SystemInfo:
             logger.error(f"獲取記憶體信息時發生錯誤: {str(e)}")
             system_info['memory_info'] = "未知記憶體"
         system_info['has_cuda'] = torch.cuda.is_available()
+        system_info['has_mps'] = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
         if system_info['has_cuda']:
             try:
                 cuda_count = torch.cuda.device_count()
@@ -102,13 +133,20 @@ class SystemInfo:
                     allocated = torch.cuda.memory_allocated(i) / (1024**3)
                     try:
                         if pynvml:
-                            pynvml.nvmlInit()
-                            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-                            mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                            total_gpu_mem_nv = mem_info.total / (1024**3)
-                            used_gpu_mem = mem_info.used / (1024**3)
-                            total_gpu_mem = total_gpu_mem_nv
-                            pynvml.nvmlShutdown()
+                            def get_nvml_info():
+                                pynvml.nvmlInit()
+                                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                                mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                                total_gpu_mem_nv = mem_info.total / (1024**3)
+                                used_gpu_mem = mem_info.used / (1024**3)
+                                pynvml.nvmlShutdown()
+                                return total_gpu_mem_nv, used_gpu_mem
+                            nvml_result = _safe_call_with_timeout(get_nvml_info, timeout=2.0)
+                            if nvml_result:
+                                total_gpu_mem_nv, used_gpu_mem = nvml_result
+                                total_gpu_mem = total_gpu_mem_nv
+                            else:
+                                used_gpu_mem = allocated
                         else:
                             used_gpu_mem = allocated
                     except Exception as e:
@@ -146,6 +184,48 @@ class SystemInfo:
             system_info['gpu_info'] = "未檢測到支援的顯示卡"
             system_info['gpu_memory_info'] = "不適用"
             system_info['is_low_memory_gpu'] = False
+        if system_info['has_mps']:
+            try:
+                if platform.system() == "Darwin":
+                    try:
+                        def get_mac_hardware_info():
+                            import subprocess
+                            result = subprocess.run(['system_profiler', 'SPHardwareDataType'], capture_output=True, text=True, timeout=8)
+                            if result.returncode == 0:
+                                lines = result.stdout.split('\n')
+                                chip_info = None
+                                memory_info = None
+                                for line in lines:
+                                    if 'Chip:' in line:
+                                        chip_info = line.split(':', 1)[1].strip()
+                                    elif 'Memory:' in line:
+                                        memory_info = line.split(':', 1)[1].strip()
+                                return chip_info, memory_info
+                            return None, None
+                        mac_info = _safe_call_with_timeout(get_mac_hardware_info, timeout=10.0)
+                        if mac_info:
+                            chip_info, memory_info = mac_info
+                            system_info['mps_device_name'] = chip_info or "Apple Silicon"
+                            system_info['mps_memory_info'] = memory_info or "未知"
+                        else:
+                            system_info['mps_device_name'] = "Apple Silicon"
+                            system_info['mps_memory_info'] = "未知"
+                    except Exception as e:
+                        logger.debug(f"無法獲取詳細的 Mac 硬體資訊: {str(e)}")
+                        system_info['mps_device_name'] = "Apple Silicon"
+                        system_info['mps_memory_info'] = "未知"
+                else:
+                    system_info['mps_device_name'] = "Metal GPU"
+                    system_info['mps_memory_info'] = "未知"
+                system_info['mps_info'] = f"{system_info['mps_device_name']} (MPS)"
+                logger.info(f"檢測到 MPS 支援: {system_info['mps_info']}")
+            except Exception as e:
+                logger.error(f"獲取 MPS 設備資訊時發生錯誤: {str(e)}")
+                system_info['mps_device_name'] = "Metal GPU"
+                system_info['mps_memory_info'] = "未知"
+                system_info['mps_info'] = "Metal GPU (MPS)"
+        else:
+            system_info['mps_info'] = None
         system_info['pytorch_version'] = torch.__version__
         return system_info
     
@@ -162,6 +242,9 @@ class SystemInfo:
         device_options.append(("自動選擇", "auto"))
         cpu_name = system_info.get('cpu_brand_model', '未知 CPU')
         device_options.append((f"{cpu_name} (CPU)", "cpu"))
+        if system_info.get('has_mps', False):
+            mps_name = system_info.get('mps_device_name', 'Metal GPU')
+            device_options.append((f"{mps_name} (MPS)", "mps"))
         if system_info.get('has_cuda', False):
             for gpu in system_info.get('gpus', []):
                 device_options.append((gpu['combo_text'], gpu['device_str']))
@@ -180,6 +263,9 @@ class SystemInfo:
         device_type = device.type
         if device_type == "cpu":
             return f"{system_info.get('cpu_brand_model', '未知 CPU')} (CPU)"
+        elif device_type == "mps":
+            mps_name = system_info.get('mps_device_name', 'Metal GPU')
+            return f"{mps_name} (MPS)"
         elif device_type == "cuda":
             device_index = device.index if hasattr(device, 'index') else 0
             gpu_info = None
@@ -194,7 +280,6 @@ class SystemInfo:
             else:
                 gpu_name = torch.cuda.get_device_name(device_index)
                 return f"{gpu_name} (CUDA:{device_index})"
-        
         return str(device)
 
 def get_system_info():

@@ -4,22 +4,74 @@ import time
 import cv2
 import logging
 import torch
+import tempfile
+import subprocess
+import platform
 from PIL import Image
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
                             QFileDialog, QProgressBar, QComboBox, QSpinBox, QCheckBox, 
                             QGroupBox, QMessageBox, QDoubleSpinBox, QRadioButton, QButtonGroup,
                             QSplitter, QFrame, QToolButton, QScrollArea, QLineEdit, QSlider,
                             QStackedWidget)
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QThread, QEvent
 from PyQt6.QtGui import QIcon, QFont, QIntValidator
 
 from src.ui.views import MultiViewWidget
 from src.threads.NS_VideoThread import VideoEnhancerThread
-
+from src.processing.NS_ImageClassification import ImageClassifier
 from src.utils.NS_DeviceInfo import get_system_info, get_device_options, get_device_name
 
 
 logger = logging.getLogger(__name__)
+
+def open_folder_in_explorer(path):
+    """跨平台開啟文件夾"""
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(path)
+        elif system == "Darwin":
+            subprocess.run(["open", path], check=True)
+        elif system == "Linux":
+            subprocess.run(["xdg-open", path], check=True)
+        else:
+            logger.warning(f"不支援的作業系統: {system}")
+            return False
+        return True
+    except Exception as e:
+        logger.error(f"開啟文件夾時出錯: {str(e)}")
+        return False
+
+class ClassifierThread(QThread):
+    """用於圖像分類的線程"""
+    resultReady = pyqtSignal(dict)
+    error = pyqtSignal(str)
+    
+    def __init__(self, classifier, image_path):
+        super().__init__()
+        self.classifier = classifier
+        self.image_path = image_path
+        
+    def run(self):
+        try:
+            if not self.classifier.is_model_loaded():
+                if not self.classifier.load_model():
+                    self.error.emit("未能載入分類模型")
+                    return   
+            image = Image.open(self.image_path).convert('RGB')
+            result = self.classifier.classify_image(image)
+            if not result["success"]:
+                self.error.emit(f"分類失敗: {result.get('error', '未知錯誤')}")
+                return
+            self.resultReady.emit(result)
+        except Exception as e:
+            self.error.emit(f"分類過程出錯: {str(e)}")
+        finally:
+            try:
+                if hasattr(self, 'classifier'):
+                    self.classifier = None
+            except:
+                pass
 
 class CollapsibleBox(QWidget):
     """可折疊的參數區塊"""
@@ -68,6 +120,9 @@ class VideoProcessingTab(QWidget):
         self.input_video_path = None
         self.original_video_size = (0, 0)
         self.system_info = get_system_info()
+        self.image_classifier = ImageClassifier()
+        self.classifier_thread = None
+        self.temp_classification_file = None
         self.setup_ui()
         self.current_frame_index = 0
         self.frame_cache = {}  
@@ -200,6 +255,9 @@ class VideoProcessingTab(QWidget):
         progress_layout.addWidget(self.vid_progress_bar, 3)
         self.vid_status_label = QLabel("等待處理...")
         progress_layout.addWidget(self.vid_status_label, 2)
+        self.recommended_model_label = QLabel("推薦模型: --")
+        self.recommended_model_label.setStyleSheet("font-weight: bold;")
+        progress_layout.addWidget(self.recommended_model_label, 2)
         self.vid_remaining_label = QLabel("預計剩餘時間: --:--:--")
         progress_layout.addWidget(self.vid_remaining_label, 1)
         self.model_status_label = QLabel("模型狀態: 未載入")
@@ -564,11 +622,94 @@ class VideoProcessingTab(QWidget):
                     self.width_input.setText(str(width))
                     self.height_input.setText(str(height))
                 self.update_custom_size_info()
+                with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
+                    temp_path = temp_file.name
+                    original_frame.save(temp_path, 'JPEG')
+                    self.run_video_frame_classification(temp_path)
+                    
             cap.release()
             self.enhance_video_button.setEnabled(True)
             if self.parent:
                 self.parent.tab_widget.setCurrentIndex(1)
     
+    def run_video_frame_classification(self, image_path):
+        """運行影片幀分類獲取推薦模型"""
+        if self.classifier_thread and self.classifier_thread.isRunning():
+            self.classifier_thread.terminate()
+            self.classifier_thread.wait()
+        self.temp_classification_file = image_path
+        self.recommended_model_label.setText("推薦模型: 分析中...")
+        self.update_recommended_model_style()
+        self.classifier_thread = ClassifierThread(self.image_classifier, image_path)
+        self.classifier_thread.resultReady.connect(self.on_classification_results)
+        self.classifier_thread.error.connect(self.on_classification_error)
+        self.classifier_thread.start()
+
+    def on_classification_results(self, result):
+        """處理分類結果"""
+        try:
+            if result["success"]:
+                top_class = result["top_class"]
+                accuracy = result["top_probability"]
+                if top_class == "NULL":
+                    self.recommended_model_label.setText("推薦模型: NULL")
+                    self.update_recommended_model_style()
+                else:
+                    self.recommended_model_label.setText(f"推薦模型: {top_class} ({accuracy:.1f}%)")
+                    self.update_recommended_model_style()
+                logging.info(f"影片幀分類完成: 推薦模型 {top_class}，準確率: {accuracy:.2f}%")
+            else:
+                self.recommended_model_label.setText("推薦模型: 分類失敗")
+                self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+        finally:
+            try:
+                self.image_classifier.unload_model()
+                logging.info("影片幀分類模型已自動卸載以釋放資源")
+            except Exception as e:
+                logging.error(f"自動卸載分類模型時出錯: {str(e)}")
+            self._cleanup_temp_classification_file()
+
+    def on_classification_error(self, error_msg):
+        """處理分類錯誤"""
+        try:
+            self.recommended_model_label.setText("推薦模型: 未安裝插件")
+            self.recommended_model_label.setStyleSheet("color: #888; font-weight: bold;")
+            logging.error(f"影片幀分類錯誤: {error_msg}")
+        finally:
+            try:
+                self.image_classifier.unload_model()
+                logging.info("影片幀分類模型已自動卸載以釋放資源")
+            except Exception as e:
+                logging.error(f"自動卸載分類模型時出錯: {str(e)}")
+            self._cleanup_temp_classification_file()
+    
+    def _cleanup_temp_classification_file(self):
+        """清理臨時分類檔案"""
+        if hasattr(self, 'temp_classification_file') and self.temp_classification_file:
+            try:
+                if os.path.exists(self.temp_classification_file):
+                    os.unlink(self.temp_classification_file)
+                    logging.debug(f"已清理臨時分類檔案: {self.temp_classification_file}")
+            except Exception as e:
+                logging.warning(f"清理臨時分類檔案時出錯: {str(e)}")
+            finally:
+                self.temp_classification_file = None
+    
+    def update_recommended_model_style(self):
+        """更新推薦模型標籤的樣式以適應當前主題"""
+        if hasattr(self, 'recommended_model_label'):
+            current_text = self.recommended_model_label.text()
+            if "NULL" in current_text:
+                self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+            elif "分析中" in current_text:
+                self.recommended_model_label.setStyleSheet("color: gray; font-weight: bold;")
+            elif "分類失敗" in current_text:
+                self.recommended_model_label.setStyleSheet("color: red; font-weight: bold;")
+            elif "未安裝插件" in current_text:
+                self.recommended_model_label.setStyleSheet("color: #888; font-weight: bold;")
+            else:
+                self.recommended_model_label.setStyleSheet("font-weight: bold;")
+
     def enhance_video(self):
         if not self.input_video_path:
             QMessageBox.warning(self, "警告", "請先開啟影片。")
@@ -615,6 +756,8 @@ class VideoProcessingTab(QWidget):
                 self.used_device_name = "自動選擇"
                 if device.type == "cuda":
                     self.used_device_name = f"自動選擇 - {get_device_name(device, self.system_info)}"
+                elif device.type == "mps":
+                    self.used_device_name = f"自動選擇 - {self.system_info.get('mps_device_name', 'Apple Silicon')} (MPS)"
                 else:
                     self.used_device_name = f"自動選擇 - {self.system_info.get('cpu_brand_model', 'CPU')} (CPU)"
                 logger.info(f"使用自動選擇的設備: {device}, {self.used_device_name}")
@@ -787,7 +930,12 @@ class VideoProcessingTab(QWidget):
             )
             if reply == QMessageBox.StandardButton.Yes:
                 output_dir = os.path.dirname(os.path.abspath(output_path))
-                os.startfile(output_dir)
+                success = open_folder_in_explorer(output_dir)
+                if not success:
+                    QMessageBox.information(
+                        self, "提示", 
+                        f"無法自動開啟文件夾。\n輸出位置: {output_dir}"
+                    )
         else:
             self.vid_status_label.setText("影片處理失敗。")
     
@@ -829,3 +977,19 @@ class VideoProcessingTab(QWidget):
                 image_a_name=frame_text,
                 image_b_name=enhanced_text
             )
+            
+    def closeEvent(self, event):
+        """確保在關閉時釋放資源"""
+        if hasattr(self, 'classifier_thread') and self.classifier_thread and self.classifier_thread.isRunning():
+            self.classifier_thread.terminate()
+            self.classifier_thread.wait()
+        if hasattr(self, 'image_classifier'):
+            self.image_classifier.unload_model()
+        self._cleanup_temp_classification_file()
+        event.accept()
+    
+    def changeEvent(self, event):
+        """處理系統主題變更事件"""
+        if event.type() == QEvent.Type.PaletteChange:
+            self.update_recommended_model_style()
+        super().changeEvent(event)

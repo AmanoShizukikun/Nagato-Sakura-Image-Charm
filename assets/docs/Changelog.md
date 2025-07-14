@@ -1,3 +1,23 @@
+### 1.2.1 (2025 年 7 月 15 日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.1.jpg)
+### 重要變更
+- 【重大】添加了對 Apple Metal Performance Shaders (MPS) 的支援，現在可以使用蘋果系統的硬體加速。
+- 【重大】刪除了 ExtractUtility.py ，移除了解壓縮功能。
+### 新增功能
+- 【新增】影片處理功能添加了 NS-C 模型推薦功能。
+- 【更新】優化了 NS-C 模型的調用方式，在使用完畢會自動釋放資源。
+- 【更新】優化了基準測試開啟效率，在背景執行緒中收集系統資訊以避免UI阻塞。
+- 【修復】模型推薦功能在部分系統及淺色模式下無法使用的問題。
+- 【修復】影片處理功能，在 MacOS 完成影片處理後開啟對話框開啟資料夾閃退的問題。
+- 【修復】當不存在模型時，下載模型行後跳出使用新模型對話框按否會出現，在模型清單選擇該模型時卻無法使用該模型的問題。
+### 已知問題
+- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
+- 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本後將強制預裝 Nagato-Sakura-Image-Quality-Assessment 影像評分功能 (約1MB)。
+- 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本後將強制預裝 Nagato-Sakura-Image-Classification (NS-C)模型推薦功能 (約16MB)。
+- 【錯誤】MacOS 同時存在兩張圖片執行完整圖片評估功能時會直接閃退的問題。
+- 【錯誤】Linux 同時存在兩張圖片執行完整圖片評估功能時會缺乏字體直接閃退的問題。
+- 【錯誤】MacOS、Linux 下載頁面文字重疊在預覽框上面。 
+
 ### 1.2.0 (2025 年 5 月 20 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.0.jpg)
 ### 重要變更

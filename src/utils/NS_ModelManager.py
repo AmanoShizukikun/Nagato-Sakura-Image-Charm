@@ -12,7 +12,6 @@ from PyQt6.QtWidgets import QMessageBox
 
 from src.models.NS_ImageEnhancer import ImageQualityEnhancer
 from src.utils.NS_DownloadManager import DownloadManager
-from src.utils.NS_ExtractUtility import ExtractUtility 
 
 
 logger = logging.getLogger(__name__)
@@ -46,7 +45,16 @@ class ModelManager(QObject):
     def __init__(self):
         """初始化模型管理器"""
         super().__init__()
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+            logger.info(f"模型管理器選擇 CUDA 設備: {torch.cuda.get_device_name()}")
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+            logger.info("模型管理器選擇 MPS 設備 (Apple Metal GPU)")
+        else:
+            self.device = torch.device("cpu")
+            logger.info("模型管理器選擇 CPU 設備")
+        
         self.base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.models_dir = get_data_path("models")
         self.config_dir = get_data_path("config")
@@ -69,7 +77,6 @@ class ModelManager(QObject):
         self.download_thread = None
         self.current_download_info = None
         self.observers = []
-        self.scan_models_directory()
             
     def add_observer(self, observer):
         """添加觀察者，用於接收模型變更通知"""
@@ -92,13 +99,9 @@ class ModelManager(QObject):
                 except Exception as e:
                     logger.error(f"通知觀察者 {observer} 時發生錯誤: {str(e)}")
     
-    # ========== 基本信息獲取 ==========
-    
     def get_device(self):
         """獲取當前使用的設備 (GPU/CPU)"""
         return self.device
-        
-    # ========== 模型資訊管理 ==========
     
     def load_models_data(self):
         """從本地 JSON 檔案載入模型數據"""
@@ -188,8 +191,6 @@ class ModelManager(QObject):
         """獲取模型數據最後更新時間"""
         return self.models_data.get('last_updated', datetime.now().strftime("%Y-%m-%d"))
     
-    # ========== 模型更新 ==========
-    
     def check_for_updates(self):
         """檢查是否有模型數據更新"""
         try:
@@ -256,9 +257,7 @@ class ModelManager(QObject):
             self.update_finished_signal.emit(False, f"更新失敗: {str(e)}")
             return False
     
-    # ========== 模型下載 ==========
-    
-    def download_model_from_url(self, url, save_path=None, num_threads=4, retry_count=3, auto_extract=True):
+    def download_model_from_url(self, url, save_path=None, num_threads=4, retry_count=3):
         """使用下載器下載模型"""
         if not url:
             logger.error("URL不能為空")
@@ -272,7 +271,7 @@ class ModelManager(QObject):
             self.downloader = DownloadManager()
             self.downloader.progress_signal.connect(self._forward_download_progress)
             self.downloader.finished_signal.connect(
-                lambda success, msg: self._handle_download_finished(success, msg, save_path, auto_extract)
+                lambda success, msg: self._handle_download_finished(success, msg, save_path)
             )
             self.download_thread = threading.Thread(
                 target=self.downloader.download_file,
@@ -291,7 +290,7 @@ class ModelManager(QObject):
             self.download_finished_signal.emit(False, f"下載初始化失敗: {str(e)}")
             return False
     
-    def download_official_model(self, model_id, save_path=None, num_threads=4, retry_count=3, auto_extract=True):
+    def download_official_model(self, model_id, save_path=None, num_threads=4, retry_count=3):
         """下載官方模型庫中的指定模型，支援備用載點"""
         try:
             if model_id not in self.models_data.get('models', {}):
@@ -314,11 +313,10 @@ class ModelManager(QObject):
                 'save_path': save_path,
                 'num_threads': num_threads,
                 'retry_count': retry_count,
-                'auto_extract': auto_extract,
                 'using_backup': False
             }
             self.update_progress_signal.emit(f"開始下載模型: {model_info['name']}")
-            return self.download_model_from_url(url, save_path, num_threads, retry_count, auto_extract)
+            return self.download_model_from_url(url, save_path, num_threads, retry_count)
         except Exception as e:
             logger.error(f"下載模型失敗: {str(e)}")
             self.download_finished_signal.emit(False, f"下載模型失敗: {str(e)}")
@@ -344,31 +342,13 @@ class ModelManager(QObject):
         except Exception as e:
             logger.error(f"轉發下載進度信號時出錯: {str(e)}")
     
-    def _handle_download_finished(self, success, message, file_path, auto_extract=True):
-        """處理下載完成後的操作，包括可選的自動解壓功能和備用載點支援"""
+    def _handle_download_finished(self, success, message, file_path):
+        """處理下載完成後的操作，包括備用載點支援"""
         try:
             if success:
                 self.update_progress_signal.emit("下載完成")
-                if auto_extract and ExtractUtility.is_archive_file(file_path):
-                    self.update_progress_signal.emit("正在解壓縮文件...")
-                    extract_success, extract_msg, extracted_files = ExtractUtility.extract_file(
-                        file_path, 
-                        extract_dir=self.models_dir, 
-                        delete_after=True
-                    )
-                    if extract_success:
-                        self.update_progress_signal.emit("解壓縮完成")
-                        model_files = ExtractUtility.get_extracted_files_of_type(
-                            extracted_files, 
-                            ['.pth', '.pt', '.ckpt', '.safetensors']
-                        )
-                        if model_files:
-                            message += f" (已自動解壓 {len(model_files)} 個模型文件)"
-                        else:
-                            message += " (已自動解壓)"
-                    else:
-                        message += f" (解壓縮失敗: {extract_msg})"
                 self.scan_models_directory()
+                self.notify_observers("reload_models")
                 self.download_finished_signal.emit(True, message)
                 self.model_downloaded_signal.emit(file_path)
             else:
@@ -388,9 +368,8 @@ class ModelManager(QObject):
                             save_path = self.current_download_info['save_path']
                             num_threads = self.current_download_info['num_threads']
                             retry_count = self.current_download_info['retry_count']
-                            auto_extract = self.current_download_info['auto_extract']
                             self.current_download_info['using_backup'] = True
-                            self.download_model_from_url(backup_url, save_path, num_threads, retry_count, auto_extract)
+                            self.download_model_from_url(backup_url, save_path, num_threads, retry_count)
                             return
                 self.update_progress_signal.emit(f"下載失敗: {message}")
                 self.download_finished_signal.emit(False, message)
@@ -398,40 +377,29 @@ class ModelManager(QObject):
             logger.error(f"處理下載完成時出錯: {str(e)}")
             self.download_finished_signal.emit(False, f"處理下載完成時出錯: {str(e)}")
     
-    # ========== 本地模型掃描與管理 ==========
-    
     def scan_models_directory(self):
         """掃描models目錄下所有可用的模型，但不載入任何模型"""
         try:
             self.available_models = []
             self.model_info = {}
-            
             if not os.path.exists(self.models_dir):
                 logger.warning(f"模型目錄不存在: {self.models_dir}")
                 os.makedirs(self.models_dir, exist_ok=True)
                 return []
-            
             logger.info(f"掃描模型目錄: {self.models_dir}")
-            
             for root, _, files in os.walk(self.models_dir):
                 for file in files:
                     if file.endswith(('.pth', '.pt', '.ckpt', '.safetensors')):
                         model_path = os.path.join(root, file)
                         rel_path = os.path.relpath(model_path, self.models_dir)
-                        
                         self.available_models.append(model_path)
                         self.model_statuses[model_path] = "available"
-                        
-                        # 獲取檔案資訊
                         model_name = os.path.splitext(file)[0]
                         size_bytes = os.path.getsize(model_path)
                         size_mb = size_bytes / (1024 * 1024)
                         last_modified = os.path.getmtime(model_path)
                         last_modified_date = datetime.fromtimestamp(last_modified).strftime('%Y-%m-%d %H:%M:%S')
-                        
-                        # 獲取額外資訊
                         extra_info = self._get_model_extra_info(model_name)
-                        
                         self.model_info[model_path] = {
                             "name": model_name,
                             "path": model_path,
@@ -444,7 +412,6 @@ class ModelManager(QObject):
                         }
             logger.info(f"掃描到 {len(self.available_models)} 個模型")
             return self.available_models
-            
         except Exception as e:
             logger.error(f"掃描模型目錄時出錯: {str(e)}")
             return []
@@ -513,6 +480,8 @@ class ModelManager(QObject):
             for path in self.model_statuses:
                 self.model_statuses[path] = "available"
             self.model_statuses[model_path] = "registered"
+            # 通知觀察者模型已註冊
+            self.notify_observers("on_registered_model_changed", model_path)
             return True
         except Exception as e:
             logger.error(f"註冊模型時出錯: {str(e)}")
@@ -603,14 +572,19 @@ class ModelManager(QObject):
                     logger.info(f"釋放了約 {before_free - after_free:.2f} MB 顯存")
                 except Exception as e:
                     logger.warning(f"無法獲取釋放後顯存資訊: {str(e)}")
+            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                try:
+                    if hasattr(torch.mps, 'empty_cache'):
+                        torch.mps.empty_cache()
+                        logger.info("MPS 記憶體緩存已清理")
+                except Exception as e:
+                    logger.warning(f"清理MPS記憶體緩存時出錯: {str(e)}")
             gc.collect()
             logger.info("模型快取清理完成")
             return True
         except Exception as e:
             logger.error(f"清空模型快取時出錯: {str(e)}")
             return False
-    
-    # ========== 模型匯入與刪除 ==========
     
     def import_external_model(self, source_path):
         """匯入外部模型到models目錄，但不載入模型"""
@@ -659,8 +633,6 @@ class ModelManager(QObject):
         except Exception as e:
             logger.error(f"刪除模型失敗: {str(e)}")
             return False, f"刪除模型失敗: {str(e)}"
-    
-    # ========== 模型使用統計功能 ==========
     
     def _load_usage_stats(self):
         """載入模型使用統計資料"""
