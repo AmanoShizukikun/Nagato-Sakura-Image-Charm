@@ -178,6 +178,11 @@ class VideoProcessingTab(QWidget):
         """更新影片處理強度標籤顯示"""
         actual_strength = (value + 1) * 10
         self.vid_strength_value_label.setText(f"{actual_strength}%")
+
+    def update_vid_sharpness_label(self, value):
+        """更新影片銳化強度標籤"""
+        sharpness_percent = value * 5
+        self.vid_sharpness_value_label.setText(f"{sharpness_percent}%")
     
     def update_scale_factor_info(self, value):
         """更新超分倍率資訊"""
@@ -322,6 +327,20 @@ class VideoProcessingTab(QWidget):
         strength_layout.addWidget(self.vid_strength_slider)
         strength_layout.addWidget(self.vid_strength_value_label)
         model_param_layout.addLayout(strength_layout)
+        sharpness_layout = QHBoxLayout()
+        sharpness_layout.addWidget(QLabel("銳化強度:"))
+        self.vid_sharpness_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vid_sharpness_slider.setRange(0, 20)
+        self.vid_sharpness_slider.setValue(0)
+        self.vid_sharpness_slider.setTickInterval(5)
+        self.vid_sharpness_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.vid_sharpness_value_label = QLabel("0%")
+        self.vid_sharpness_value_label.setMinimumWidth(50)
+        self.vid_sharpness_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.vid_sharpness_slider.valueChanged.connect(self.update_vid_sharpness_label)
+        sharpness_layout.addWidget(self.vid_sharpness_slider)
+        sharpness_layout.addWidget(self.vid_sharpness_value_label)
+        model_param_layout.addLayout(sharpness_layout)
         model_param_box.setContentLayout(model_param_layout)
         params_content_layout.addWidget(model_param_box, 1)
         # === 影片參數區塊 ===
@@ -427,14 +446,10 @@ class VideoProcessingTab(QWidget):
         crf_layout.addWidget(self.crf_slider)
         self.crf_value_label = QLabel("23")
         crf_layout.addWidget(self.crf_value_label)
-        self.crf_slider.valueChanged.connect(
-            lambda v: self.crf_value_label.setText(str(v))
-        )
+        self.crf_slider.valueChanged.connect(lambda v: self.crf_value_label.setText(str(v)))
         self.rate_control_stack.addWidget(abr_widget)
         self.rate_control_stack.addWidget(crf_widget)
-        self.abr_radio.toggled.connect(
-            lambda: self.rate_control_stack.setCurrentIndex(0 if self.abr_radio.isChecked() else 1)
-        )
+        self.abr_radio.toggled.connect(lambda: self.rate_control_stack.setCurrentIndex(0 if self.abr_radio.isChecked() else 1))
         rate_control_layout.addWidget(self.rate_control_stack)
         video_param_layout.addLayout(rate_control_layout)
         audio_layout = QVBoxLayout()
@@ -468,9 +483,7 @@ class VideoProcessingTab(QWidget):
         self.audio_bitrate_combo.setCurrentText('192k')
         audio_settings_layout.addWidget(self.audio_bitrate_combo)
         self.audio_settings_widget.setVisible(False)
-        self.reencode_audio_radio.toggled.connect(
-            lambda checked: self.audio_settings_widget.setVisible(checked)
-        )
+        self.reencode_audio_radio.toggled.connect(lambda checked: self.audio_settings_widget.setVisible(checked))
         audio_layout.addWidget(self.audio_settings_widget)
         video_param_layout.addLayout(audio_layout)
         format_layout = QHBoxLayout()
@@ -771,6 +784,8 @@ class VideoProcessingTab(QWidget):
             blending_mode = self.vid_blending_combo.currentText()
             strength_percent = (self.vid_strength_slider.value() + 1) * 10
             strength = strength_percent / 100.0
+            sharpness_percent = self.vid_sharpness_slider.value() * 5
+            sharpness = sharpness_percent / 100.0
             frame_step = self.frame_step_spin.value()
             sync_preview = self.sync_preview_check.isChecked()
             preview_interval = self.preview_interval_spin.value()
@@ -846,7 +861,8 @@ class VideoProcessingTab(QWidget):
                 keep_audio=(audio_mode != "none"),
                 sync_preview=sync_preview,
                 video_options=video_options,
-                strength=strength
+                strength=strength,
+                sharpness=sharpness
             )
             self.video_enhancer_thread.progress_signal.connect(self.update_video_progress)
             self.video_enhancer_thread.finished_signal.connect(self.video_process_finished)

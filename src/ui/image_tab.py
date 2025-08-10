@@ -154,6 +154,11 @@ class ImageProcessingTab(QWidget):
         actual_strength = (value + 1) * 10
         self.strength_value_label.setText(f"{actual_strength}%")
     
+    def update_sharpness_label(self, value):
+        """更新銳化強度標籤"""
+        sharpness_percent = value * 5
+        self.sharpness_value_label.setText(f"{sharpness_percent}%")
+    
     def update_scale_factor_info(self, value):
         """更新超分倍率資訊"""
         factor = value
@@ -331,6 +336,23 @@ class ImageProcessingTab(QWidget):
         self.amp_combo.setMinimumWidth(100)
         self.amp_combo.setToolTip("自動偵測: 根據GPU類型自動決定\n強制啟用: 使用混合精度計算(較快但可能有問題)\n強制禁用: 使用完整精度計算(較穩定但較慢)")
         processing_options_grid.addWidget(self.amp_combo, 2, 1)
+        
+        # 添加銳化參數
+        processing_options_grid.addWidget(QLabel("銳化強度:"), 3, 0)
+        sharpness_layout = QHBoxLayout()
+        self.sharpness_slider = QSlider(Qt.Orientation.Horizontal)
+        self.sharpness_slider.setRange(0, 20)
+        self.sharpness_slider.setValue(0)
+        self.sharpness_slider.setTickInterval(5)
+        self.sharpness_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.sharpness_slider.valueChanged.connect(self.update_sharpness_label)
+        self.sharpness_value_label = QLabel("0%")
+        self.sharpness_value_label.setMinimumWidth(45)
+        self.sharpness_value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sharpness_layout.addWidget(self.sharpness_slider)
+        sharpness_layout.addWidget(self.sharpness_value_label)
+        processing_options_grid.addLayout(sharpness_layout, 3, 1)
+        
         processing_options_box.setContentLayout(processing_options_grid)
         column1_layout.addWidget(processing_options_box)
         column1_layout.addStretch(1)
@@ -594,6 +616,8 @@ class ImageProcessingTab(QWidget):
             blending_mode = self.blending_combo.currentText()
             strength_percent = (self.strength_slider.value() + 1) * 10
             strength = strength_percent / 100.0
+            sharpness_percent = self.sharpness_slider.value() * 5
+            sharpness = sharpness_percent / 100.0
             upscale_factor = 1.0 
             target_width = 0
             target_height = 0
@@ -641,7 +665,8 @@ class ImageProcessingTab(QWidget):
                 target_height,
                 maintain_aspect_ratio,
                 resize_mode,
-                use_amp=use_amp 
+                use_amp=use_amp,
+                sharpness=sharpness
             )
             self.enhancer_thread.progress_signal.connect(self.update_progress)
             self.enhancer_thread.finished_signal.connect(self.process_finished)

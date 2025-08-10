@@ -10,10 +10,33 @@
 「長門桜-イメージチャーム」は「長門桜プロジェクト」の派生品であり、「長門桜」の画像コアをベースにした画像強化・評価のためのグラフィカルツールです。AI超解像、画像・動画の強化、品質評価などの機能をサポートしています。
 
 ## お知らせ
-Apple Metal Performance Shaders (MPS) のサポートを追加しました。これにより、Appleシステムのハードウェアアクセラレーションが利用できるようになりました。
-NS-IC-Kairitsu-v7pro-370 および NS-IC-Ritsuka-LQ-v7-228(Beta) は内蔵モデルリストに含まれていません。Github model space からモデルをダウンロードしてください。
+1.3.0版本後に拡張プラグイン管理機能が追加され、リポジトリにプリインストールされていた拡張機能が正式に削除されました。拡張機能ページからプラグインをインストールできます。
+1.2.1版本後にApple Metal Performance Shaders (MPS) のサポートが追加されました。これにより、Appleシステムのハードウェアアクセラレーションが利用できるようになりました。
 
 ## 最近の変更
+### 1.3.0 (2025年8月10日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.3.0.jpg)
+### 重要な変更
+- 【重要】訓練ページの処理機能に新しいdata_processerと動画フレーム抽出機能が追加されました。
+- 【重要】訓練ページの訓練モデルのカーネルバージョンがv4からv7+版本にアップグレードされました。
+- 【重要】プリインストールされていたNagato-Sakura-Image-Quality-AssessmentとNagato-Sakura-Image-Classificationを削除しました。
+- 【重要】プロジェクトレポートをassets/docsからassets/reportに移動しました。
+### 新機能
+- 【新規】画像処理と動画処理にシャープネス機能を追加しました。
+- 【新規】拡張プラグイン管理機能を追加し、拡張機能ページにより、アプリケーション内で拡張機能のインストール、更新、アンインストールが可能になりました。
+- 【新規】ログ監視機能により、アプリケーション内でアクションログを監視できるようになりました。
+- 【新規】更新確認機能により、アプリケーションの新バージョンの有無を確認できるようになりました。
+- 【更新】訓練ページのデータ処理機能を向上させました。
+- 【更新】訓練ページのトレーナーカーネルバージョンを更新しました。
+- 【更新】メインプログラムのCLIインターフェースにログレベル色を追加し、ログの確認が容易になりました。
+- 【更新】イースターエッグを変更し、拡張機能のインストール可能な拡張パックを追加しました。
+- 【更新】ダウンロードページのスケール比率とスケール上限の問題を改善しました。
+- 【修正】MacOS、Linuxのダウンロードページでテキストがプレビューボックスに重なる問題を修正しました。
+- 【修正】超解像画像のプレビューサイズが元の画像と異なることによる直感的比較の困難さを修正しました。
+- 【修正】分割画面の左ドラッグライン振動問題を修正しました。
+### 既知の問題
+- 【バグ】Linux、MacOSで2つの画像が同時に存在する状態で完全画像評価機能を実行すると直接クラッシュする問題があります。
+
 ### 1.2.1 (2025年7月15日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.1.jpg)
 ### 重要な変更
@@ -30,8 +53,7 @@ NS-IC-Kairitsu-v7pro-370 および NS-IC-Ritsuka-LQ-v7-228(Beta) は内蔵モデ
 - 【バグ】超解像画像のプレビューサイズが元の画像と異なるため、直感的な比較が難しくなっています。
 - 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.2.0以降ではNagato-Sakura-Image-Quality-Assessment画像評価機能（約1MB）が強制的にプリインストールされます。
 - 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.2.0以降ではNagato-Sakura-Image-Classification (NS-C)モデル推薦機能（約16MB）が強制的にプリインストールされます。
-- 【バグ】MacOSで2つの画像が同時に存在する状態で完全画像評価機能を実行すると直接クラッシュする問題があります。
-- 【バグ】Linuxで2つの画像が同時に存在する状態で完全画像評価機能を実行すると、フォントの不足により直接クラッシュする問題があります。
+- 【バグ】Linux、MacOSで2つの画像が同時に存在する状態で完全画像評価機能を実行すると直接クラッシュする問題があります。
 - 【バグ】MacOS、Linuxでダウンロードページの文字がプレビューボックスに重なって表示される問題があります。
 
 ### 1.2.0 (2025年5月20日)
@@ -46,19 +68,6 @@ NS-IC-Kairitsu-v7pro-370 および NS-IC-Ritsuka-LQ-v7-228(Beta) は内蔵モデ
 - 【バグ】超解像画像のプレビューサイズが元の画像と異なるため、直感的な比較が難しくなっています。
 - 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.2.0ではNagato-Sakura-Image-Quality-Assessment画像評価機能（約1MB）が強制的にプリインストールされます。
 - 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.2.0ではNagato-Sakura-Image-Classification (NS-C)モデル推薦機能（約16MB）が強制的にプリインストールされます。
-
-### 1.1.1 (2025年5月04日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.1.1.jpg)
-### 重要な変更
-- 【重要】AI画像評価コアのモデル構造を完全に書き直し、巨大なTransformerモデルを廃止して従来のCNNモデルに戻し、モデル構造の軽量化を行いました。
-### 新機能
-- 【新規】評価ページにエッジ比較機能を追加し、OpenCV Cannyを使用して画像のエッジを描画し、2つの画像を比較できるようになりました。
-- 【更新】評価ページのUIレイアウトを更新し、下部のプレビューボックスをスクロールボックスから操作がより自由なviews.py形式に変更しました。
-- 【更新】Ritsuka-HQのモデル説明を最適化しました。
-- 【修正】AI画像評価モデルを全面的に書き直し、現在約1MBのスペースで良好なAI評価効果を実現できます。
-### 既知の問題
-- 【バグ】超解像画像のプレビューサイズが元の画像と異なるため、直感的な比較が難しくなっています。
-- 【バグ】拡張プラグイン管理機能が未完成のため、バージョン1.1.1ではNagato-Sakura-Image-Quality-Assessment画像評価機能（約1MB）が強制的にプリインストールされます。
 
 
 [すべてのリリースバージョン](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/docs/Changelog.md)
@@ -148,16 +157,15 @@ python main.py
     - [x] 計算デバイス選択機能。
     - [x] 実際のシナリオに合ったベンチマークテスト。
     - [x] 隠されたイースターエッグ。
-    - [ ] GUIトレーナーの更新。
-    - [ ] 拡張プラグイン管理機能。
+    - [x] GUIトレーナーバージョンの更新。
+    - [x] 拡張プラグイン管理機能。
     
   - モデル
-    - [x] VGG損失関数の導入。
     - [x] 第6世代《鏡花・砕象還映》Kyouka 汎用アニメ画像JPEG圧縮復元モデル。
     - [x] 第6世代《鏡花・幽映深層》Kyouka-LQ 低品質特化アニメ画像JPEG圧縮復元モデル。
     - [x] 第7世代《鏡花・霞緲輪影》Kyouka-MQ 通常品質特化アニメ画像JPEG圧縮復元モデル。
     - [x] 第7世代《断律・映格輪廻》Ritsuka-HQ 2〜4ピクセルモザイク復元モデル。
-    - [x] 第7世代《界律・重編因像》Kairitsu リアル画像修復モデル。（効果が理想的ではないため、releasesには追加されていますがモデルリストには含まれていません）
+    - [x] 第7世代《界律・重編因像》Kairitsu リアル画像修復モデル。
 
   - その他
     - [ ] Discordボットバージョンのcog。
@@ -169,8 +177,9 @@ python main.py
 ### プロジェクト
 - [Nagato-Sakura-Discord-Bot-py](https://github.com/AmanoShizukikun/Nagato-Sakura-Discord-Bot-py)
 - [Nagato-Sakura-Image-Charm-Trainer](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm-Trainer)
-- [Nagato-Sakura-Image-Quality-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Classification)
+- [Nagato-Sakura-Image-Quality-Assessment](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Assessment)
 - [Nagato-Sakura-Image-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Classification)
+- [Nagato-Sakura-Bounce-py](https://github.com/AmanoShizukikun/Nagato-Sakura-Bounce-py)
 
 ### 貢献者
 <a href="https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/graphs/contributors" target="_blank">

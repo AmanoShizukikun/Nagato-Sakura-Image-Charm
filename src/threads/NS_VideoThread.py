@@ -9,7 +9,7 @@ import re
 import subprocess
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 from PyQt6.QtCore import QThread, pyqtSignal
 import logging
 
@@ -25,7 +25,7 @@ class VideoEnhancerThread(QThread):
 
     def __init__(self, model, input_path, output_path, device, block_size, overlap, 
                 use_weight_mask, blending_mode, frame_step=1, preview_interval=1, keep_audio=True,
-                sync_preview=True, video_options=None, strength=1.0):
+                sync_preview=True, video_options=None, strength=1.0, sharpness=0.0):
         super().__init__()
         self.model = model
         self.input_path = input_path
@@ -41,6 +41,7 @@ class VideoEnhancerThread(QThread):
         self.sync_preview = sync_preview
         self.video_options = video_options or {}
         self.strength = strength
+        self.sharpness = sharpness
         self.stop_flag = threading.Event()
         self.cap = None
         self.out = None
@@ -65,6 +66,34 @@ class VideoEnhancerThread(QThread):
             logger.info(f"混合精度計算: 禁用 (MPS不支援)")
         else:
             logger.info(f"使用CPU作為計算設備")
+    
+    def apply_sharpening(self, image, sharpness_factor):
+        """應用銳化濾鏡到圖片
+        Args:
+            image: PIL Image對象
+            sharpness_factor: 銳化強度 (0.0-1.0)
+        Returns:
+            銳化後的PIL Image對象
+        """
+        if sharpness_factor <= 0:
+            return image
+        try:
+            enhancer = ImageEnhance.Sharpness(image)
+            sharpness_value = 1.0 + sharpness_factor * 2.0
+            sharpened_image = enhancer.enhance(sharpness_value)
+            if sharpness_factor > 0.5:
+                gaussian_blur = sharpened_image.filter(ImageFilter.GaussianBlur(radius=1.0))
+                original_array = np.array(sharpened_image, dtype=np.float32)
+                blurred_array = np.array(gaussian_blur, dtype=np.float32)
+                detail_array = original_array - blurred_array
+                extra_strength = (sharpness_factor - 0.5) * 2.0
+                sharpened_array = original_array + detail_array * extra_strength
+                sharpened_array = np.clip(sharpened_array, 0, 255).astype(np.uint8)
+                sharpened_image = Image.fromarray(sharpened_array)
+            return sharpened_image
+        except Exception as e:
+            logger.error(f"銳化處理出錯: {e}")
+            return image
 
     def _should_use_amp(self, device):
         if device.type != 'cuda':
@@ -166,10 +195,7 @@ class VideoEnhancerThread(QThread):
 
     def check_ffmpeg_installed(self):
         try:
-            result = subprocess.run(['ffmpeg', '-version'], 
-                                   stdout=subprocess.PIPE, 
-                                   stderr=subprocess.PIPE, 
-                                   text=True)
+            result = subprocess.run(['ffmpeg', '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             return result.returncode == 0
         except Exception:
             return False
@@ -299,6 +325,8 @@ class VideoEnhancerThread(QThread):
                         enhanced_image = enhanced_image.resize((orig_width, orig_height), Image.Resampling.LANCZOS)
                     elif (enhanced_image.width != width or enhanced_image.height != height):
                         enhanced_image = enhanced_image.resize((width, height), Image.Resampling.LANCZOS)
+                    if self.sharpness > 0:
+                        enhanced_image = self.apply_sharpening(enhanced_image, self.sharpness)
                     min_preview_interval = 0.2 if self.high_frequency_preview else 0.5
                     actual_interval = min(self.preview_interval, min_preview_interval)
                     preview_frames = max(1, int(fps * actual_interval / self.frame_step))

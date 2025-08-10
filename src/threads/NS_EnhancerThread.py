@@ -2,10 +2,11 @@ import time
 import torch
 import torchvision.transforms as transforms
 import torch.nn.functional as F
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
 from PyQt6.QtCore import QThread, pyqtSignal
 import logging
 import re
+import numpy as np
 
 
 class EnhancerThread(QThread):
@@ -16,7 +17,7 @@ class EnhancerThread(QThread):
                  use_weight_mask=True, blending_mode='改進型高斯分佈', strength=1.0, 
                  upscale_factor=1, target_width=0, target_height=0, 
                  maintain_aspect_ratio=False, resize_mode="延伸至適合大小",
-                 use_amp=None):
+                 use_amp=None, sharpness=0.0):
         super().__init__()
         self.model = model
         self.image_path = image_path
@@ -31,6 +32,7 @@ class EnhancerThread(QThread):
         self.target_height = target_height
         self.maintain_aspect_ratio = maintain_aspect_ratio
         self.resize_mode = resize_mode
+        self.sharpness = sharpness
         self.weight_mask_cache = {}
         try:
             model_device = next(model.parameters()).device
@@ -107,6 +109,35 @@ class EnhancerThread(QThread):
             logging.warning(f"混合精度功能測試出錯: {e}")
         logging.info("無法確定GPU是否支持混合精度，為安全起見禁用")
         return False
+    
+    def apply_sharpening(self, image, sharpness_factor):
+        """應用銳化濾鏡到圖片
+        Args:
+            image: PIL Image對象
+            sharpness_factor: 銳化強度 (0.0-1.0)
+        Returns:
+            銳化後的PIL Image對象
+        """
+        if sharpness_factor <= 0:
+            return image
+        try:
+            enhancer = ImageEnhance.Sharpness(image)
+            sharpness_value = 1.0 + sharpness_factor * 2.0
+            sharpened_image = enhancer.enhance(sharpness_value)
+            if sharpness_factor > 0.5:
+                gaussian_blur = sharpened_image.filter(ImageFilter.GaussianBlur(radius=1.0))
+                original_array = np.array(sharpened_image, dtype=np.float32)
+                blurred_array = np.array(gaussian_blur, dtype=np.float32)
+                detail_array = original_array - blurred_array
+                extra_strength = (sharpness_factor - 0.5) * 2.0
+                sharpened_array = original_array + detail_array * extra_strength
+                sharpened_array = np.clip(sharpened_array, 0, 255).astype(np.uint8)
+                sharpened_image = Image.fromarray(sharpened_array)
+            logging.info(f"已應用銳化處理，強度: {sharpness_factor:.2f}")
+            return sharpened_image
+        except Exception as e:
+            logging.error(f"銳化處理出錯: {e}")
+            return image
         
     def run(self):
         try:
@@ -363,6 +394,8 @@ class EnhancerThread(QThread):
             output_tensor = output_tensor.squeeze(0).cpu().clamp(0, 1)
             enhanced_image = transforms.ToPILImage()(output_tensor)
             enhanced_image = self.resize_image(enhanced_image, output_tensor)
+            if self.sharpness > 0:
+                enhanced_image = self.apply_sharpening(enhanced_image, self.sharpness)
             if self.device.type == 'cuda':
                 torch.cuda.empty_cache()
             self.weight_mask_cache.clear()

@@ -1,562 +1,1311 @@
 import sys
 import math
-import time
 import random
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QWidget, QApplication, QLabel)
-from PyQt6.QtGui import QPainter, QColor, QKeyEvent, QFont, QPen, QBrush, QCursor, QPolygon, QPixmap
-from PyQt6.QtCore import Qt, QTimer, QPointF, QRectF, pyqtSignal, QPoint, QRect
+import logging
+import os
+import threading
+import subprocess
+import time
+from pathlib import Path
+from enum import Enum
+from typing import List, Tuple, Optional, Dict
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+                             QPushButton, QApplication, QDialog)
+from PyQt6.QtCore import QTimer, Qt, QPointF, QRectF, pyqtSignal, QUrl
+from PyQt6.QtGui import (QPainter, QPen, QBrush, QColor, QFont, 
+                         QPixmap, QPaintEvent, QMouseEvent, QKeyEvent, QIcon)
 
-# --- 基本設定 ---
-SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 600
-MAP_WIDTH = 16
-MAP_HEIGHT = 16
-CELL_SIZE = 64 
-MOUSE_SENSITIVITY = 0.0005
-NAGATO_ICON_PATH = "assets/icon/1.2.1.ico"
 
-# --- 地圖 ---
-# 0 = 空地, 1 = 牆壁 (櫻花粉色), 2 = 牆壁 (深粉色)
-world_map = [
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1],
-    [1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1],
-    [1, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1],
-    [1, 0, 1, 0, 2, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1],
-    [1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1],
-    [1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1],
-    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-    [1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 2, 2, 2, 0, 1, 1, 1, 0, 2, 2, 2, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-]
+# 遊戲常數
+GAME_WIDTH = 800  # 遊戲區域寬度
+WINDOW_WIDTH = 1400  # 窗口總寬度
+WINDOW_HEIGHT = 1000  # 窗口高度
+PLAYER_WIDTH = 100  # 玩家板子寬度
+PLAYER_HEIGHT = 100  # 玩家板子高度
+PLAYER_Y = WINDOW_HEIGHT - 50  # 玩家固定Y位置
+BALL_RADIUS = 12  # 彈跳球半徑
+BALL_SPEED = 8  # 彈跳球初始速度
+BASE_INVINCIBLE_TIME = 120  # 基礎無敵時間(幀數)
+MIN_INVINCIBLE_TIME = 30  # 最低無敵時間(幀數)
+BOSS_SCORE_THRESHOLD = 5000  # 召喚王的分數閾值
+BOSS2_SCORE_THRESHOLD = 15000  # 召喚超級王的分數閾值
 
-# 櫻花裝飾位置 (未使用)
-cherry_blossoms = [
-    (2, 1), (5, 3), (8, 2), (12, 3), (14, 2),
-    (3, 13), (7, 13), (11, 13), (9, 9), (5, 7)
-]
 
-# --- 精靈位置 (長門櫻的位置) ---
-NAGATO_X = 13.5 * CELL_SIZE
-NAGATO_Y = 13.5 * CELL_SIZE
-NAGATO_SIZE = 1.5 * CELL_SIZE  
-NAGATO_INTERACTION_DISTANCE = 2.5 * CELL_SIZE
+class Vector2D:
+    """二維向量類"""
+    def __init__(self, x: float = 0, y: float = 0):
+        self.x = x
+        self.y = y
+    
+    def __add__(self, other):
+        return Vector2D(self.x + other.x, self.y + other.y)
+    
+    def __sub__(self, other):
+        return Vector2D(self.x - other.x, self.y - other.y)
+    
+    def __mul__(self, scalar):
+        return Vector2D(self.x * scalar, self.y * scalar)
+    
+    def __truediv__(self, scalar):
+        return Vector2D(self.x / scalar, self.y / scalar)
+    
+    def copy(self):
+        return Vector2D(self.x, self.y)
+    
+    def mag(self):
+        return math.sqrt(self.x * self.x + self.y * self.y)
+    
+    def normalize(self):
+        m = self.mag()
+        if m > 0:
+            return Vector2D(self.x / m, self.y / m)
+        return Vector2D(0, 0)
+    
+    def dot(self, other):
+        return self.x * other.x + self.y * other.y
+    
+    def dist(self, other):
+        return math.sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
+    
+    @staticmethod
+    def from_angle(angle):
+        return Vector2D(math.cos(angle), math.sin(angle))
+    
+    @staticmethod
+    def random2D():
+        angle = random.uniform(0, 2 * math.pi)
+        return Vector2D.from_angle(angle)
 
-# --- 長門櫻的對話 ---
-NAGATO_DIALOGUES = [
-    "主人，您找到長門櫻了嗎？長門櫻一直在等您呢～ 🌸",
-    "主人，這裡是長門櫻的秘密基地，您喜歡嗎？ 🌸",
-    "主人，能和您一起探險真是太開心了！ 🌸",
-    "主人，這些牆壁都是櫻花顏色的呢，是長門櫻特別為您準備的～ 🌸",
-    "主人，您走了這麼遠的路，累不累？要不要休息一下？ 🌸",
-    "主人，長門櫻很開心能和您在這裡相遇！ 🌸",
-    "主人，您摸摸長門櫻的耳朵嗎？有點害羞呢... 🌸"
-]
 
-# --- Raycasting 繪圖 Widget ---
-class RaycastingWidget(QWidget):
+class EnemyType(Enum):
+    SMALL = "small"
+    MEDIUM = "medium"
+    LARGE = "large"
+    BOSS = "boss"
+    BOSS_2 = "boss_2"
+
+
+class BulletType(Enum):
+    NORMAL = "normal"
+    LASER = "laser"
+    WAVE = "wave"
+    TRAP = "trap"
+
+
+class Player:
+    """玩家類"""
+    def __init__(self):
+        self.position = Vector2D(GAME_WIDTH / 2, PLAYER_Y)
+        self.health = 10
+        self.is_invincible = False
+        self.invincible_counter = 0
+    
+    def update(self, mouse_x: int, game_level: int):
+        self.position.x = max(PLAYER_WIDTH // 2, min(mouse_x, GAME_WIDTH - PLAYER_WIDTH // 2))
+        if self.is_invincible:
+            self.invincible_counter += 1
+            current_invincible_time = max(MIN_INVINCIBLE_TIME, BASE_INVINCIBLE_TIME - game_level)
+            if self.invincible_counter >= current_invincible_time:
+                self.is_invincible = False
+                self.invincible_counter = 0
+    
+    def take_damage(self):
+        if not self.is_invincible:
+            self.health -= 1
+            self.is_invincible = True
+            self.invincible_counter = 0
+            return self.health <= 0
+        return False
+
+
+class Ball:
+    """彈跳球類"""
+    def __init__(self, position: Vector2D, velocity: Vector2D):
+        self.position = position.copy()
+        self.velocity = velocity.copy()
+        self.rotation = 0
+        self.rotation_speed = random.uniform(0.1, 0.15) * (1 if random.random() > 0.5 else -1)
+    
+    def update(self):
+        self.position = self.position + self.velocity
+        self.rotation += self.rotation_speed
+        if self.position.x < BALL_RADIUS or self.position.x > GAME_WIDTH - BALL_RADIUS:
+            self.velocity.x *= -1
+            self.position.x = max(BALL_RADIUS, min(self.position.x, GAME_WIDTH - BALL_RADIUS))
+            self.rotation_speed *= -1
+        if self.position.y < BALL_RADIUS:
+            self.velocity.y *= -1
+            self.position.y = BALL_RADIUS
+            self.rotation_speed *= -1
+        current_speed = self.velocity.mag()
+        if abs(current_speed - BALL_SPEED) > 0.1:
+            self.velocity = self.velocity.normalize() * BALL_SPEED
+    
+    def check_player_collision(self, player: Player):
+        if (self.position.y + BALL_RADIUS >= player.position.y - PLAYER_HEIGHT // 2 and
+            self.position.y - BALL_RADIUS <= player.position.y + PLAYER_HEIGHT // 2 and
+            self.position.x + BALL_RADIUS >= player.position.x - PLAYER_WIDTH // 2 and
+            self.position.x - BALL_RADIUS <= player.position.x + PLAYER_WIDTH // 2 and
+            self.velocity.y > 0):
+            return True
+        return False
+    
+    def check_enemy_collision(self, enemy):
+        distance = self.position.dist(enemy.position)
+        if distance < BALL_RADIUS + enemy.size / 2:
+            normal = (self.position - enemy.position).normalize()
+            dot_product = self.velocity.dot(normal)
+            if dot_product < 0:
+                reflection = self.velocity - normal * (2 * dot_product)
+                self.velocity = reflection.normalize() * BALL_SPEED
+                self.position = self.position + normal * 2.0
+                return True
+        return False
+
+
+class Enemy:
+    """敵人類"""
+    def __init__(self, position: Vector2D, enemy_type: EnemyType):
+        self.position = position.copy()
+        self.type = enemy_type
+        self.attack_mode = 0
+        self.attack_timer = 0
+        if enemy_type == EnemyType.SMALL:
+            self.size = 85
+            self.health = 1
+            self.velocity = Vector2D.random2D() * 3
+            self.color = QColor(100, 255, 100)
+        elif enemy_type == EnemyType.MEDIUM:
+            self.size = 115
+            self.health = 3
+            self.velocity = Vector2D.random2D() * 2
+            self.color = QColor(255, 255, 100)
+        elif enemy_type == EnemyType.LARGE:
+            self.size = 145
+            self.health = 9
+            self.velocity = Vector2D.random2D() * 1
+            self.color = QColor(255, 100, 100)
+        elif enemy_type == EnemyType.BOSS:
+            self.size = 195
+            self.health = 50
+            self.velocity = Vector2D.random2D() * 1.5
+            self.color = QColor(255, 50, 255)
+        elif enemy_type == EnemyType.BOSS_2:
+            self.size = 245
+            self.health = 100
+            self.velocity = Vector2D.random2D() * 2.0
+            self.color = QColor(200, 0, 200)
+            self.attack_mode = random.randint(0, 3)
+    
+    def update(self, frame_counter: int):
+        self.position = self.position + self.velocity
+        if (self.position.x < self.size / 2 or 
+            self.position.x > GAME_WIDTH - self.size / 2):
+            self.velocity.x *= -1
+            self.position.x = max(self.size / 2, min(self.position.x, GAME_WIDTH - self.size / 2))
+        if (self.position.y < self.size / 2 or 
+            self.position.y > WINDOW_HEIGHT / 2):
+            self.velocity.y *= -1
+            self.position.y = max(self.size / 2, min(self.position.y, WINDOW_HEIGHT / 2))
+        if self.type == EnemyType.BOSS_2:
+            self.attack_timer += 1
+            if self.attack_timer > 300:
+                self.attack_mode = (self.attack_mode + 1) % 4
+                self.attack_timer = 0
+    
+    def check_collision(self, other):
+        distance = self.position.dist(other.position)
+        min_dist = self.size / 2 + other.size / 2
+        if distance < min_dist:
+            direction = (self.position - other.position).normalize()
+            overlap = min_dist - distance
+            self.position = self.position + direction * (overlap * 0.5)
+            other.position = other.position - direction * (overlap * 0.5)
+            relative_velocity = self.velocity - other.velocity
+            dot_product = relative_velocity.dot(direction)
+            if dot_product > 0:
+                return
+            restitution = 0.8
+            impulse = -(1 + restitution) * dot_product / 2
+            self.velocity = self.velocity + direction * impulse
+            other.velocity = other.velocity - direction * impulse
+    
+    def get_shoot_chance(self):
+        chances = {
+            EnemyType.SMALL: 0.005,
+            EnemyType.MEDIUM: 0.01,
+            EnemyType.LARGE: 0.015,
+            EnemyType.BOSS: 0.05,
+            EnemyType.BOSS_2: 0.08
+        }
+        return chances.get(self.type, 0.01)
+    
+    def get_score(self):
+        scores = {
+            EnemyType.SMALL: 150,
+            EnemyType.MEDIUM: 250,
+            EnemyType.LARGE: 500,
+            EnemyType.BOSS: 1000,
+            EnemyType.BOSS_2: 2000
+        }
+        return scores.get(self.type, 100)
+    
+    def get_drop_chance(self):
+        chances = {
+            EnemyType.SMALL: 0.1,
+            EnemyType.MEDIUM: 0.2,
+            EnemyType.LARGE: 0.3,
+            EnemyType.BOSS: 1.0,
+            EnemyType.BOSS_2: 1.0
+        }
+        return chances.get(self.type, 0.3)
+
+
+class Bullet:
+    """子彈類"""
+    def __init__(self, position: Vector2D, velocity: Vector2D, 
+                 color: QColor, bullet_type: BulletType):
+        self.position = position.copy()
+        self.velocity = velocity.copy()
+        self.color = color
+        self.type = bullet_type
+        self.lifespan = 90
+        self.activated = False
+        if bullet_type == BulletType.LASER:
+            self.angle = math.atan2(velocity.y, velocity.x)
+        else:
+            self.angle = 0
+            
+        if bullet_type == BulletType.NORMAL:
+            self.size = 25  
+        elif bullet_type == BulletType.LASER:
+            self.size = 15  
+            self.lifespan = 60
+        elif bullet_type == BulletType.WAVE:
+            self.size = 25  
+        elif bullet_type == BulletType.TRAP:
+            self.size = 25 
+            self.lifespan = 180
+    
+    def update(self, frame_counter: int):
+        if self.type == BulletType.NORMAL:
+            self.position = self.position + self.velocity
+        elif self.type == BulletType.LASER:
+            self.position = self.position + self.velocity
+        elif self.type == BulletType.WAVE:
+            self.position = self.position + self.velocity
+            self.position.x += math.sin(frame_counter * 0.2) * 1.5
+        elif self.type == BulletType.TRAP:
+            if not self.activated:
+                self.lifespan -= 1
+                if self.lifespan < 120:
+                    self.activated = True
+                    self.velocity = self.velocity * 25
+            else:
+                self.position = self.position + self.velocity
+    
+    def check_player_collision(self, player: Player):
+        distance = self.position.dist(player.position)
+        if self.type == BulletType.LASER:
+            return distance < (self.size / 2 + 6)
+        else:
+            return distance < (self.size / 2 + 5)
+
+
+class NagatoSakuraBounceGame(QWidget):
+    """長門櫻彈跳球遊戲主窗口"""
+    
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+        self.load_resources()
+        self.init_game()
+        self.game_timer = QTimer()
+        self.game_timer.timeout.connect(self.game_loop)
+        self.game_timer.start(16)
+        self.frame_counter = 0
+    
+    def init_ui(self):
+        self.setWindowTitle("長門櫻 彈跳球")
+        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        try:
+            current_directory = Path(__file__).resolve().parent.parent.parent
+            icon_path = current_directory / "assets" / "icon" / "1.3.0.ico"
+            if icon_path.exists():
+                self.setWindowIcon(QIcon(str(icon_path)))
+            else:
+                icon_dir = current_directory / "assets" / "icon"
+                if icon_dir.exists():
+                    icon_files = list(icon_dir.glob("*.ico"))
+                    if icon_files:
+                        latest_icon = sorted(icon_files)[-1]
+                        self.setWindowIcon(QIcon(str(latest_icon)))
+                        logging.info(f"彩蛋遊戲使用圖示: {latest_icon.name}")
+        except Exception as e:
+            logging.warning(f"無法載入遊戲圖示: {e}")
+        self.font = QFont("Microsoft YaHei", 12)
+        self.title_font = QFont("Microsoft YaHei", 24, QFont.Weight.Bold)
+        self.game_over_font = QFont("Microsoft YaHei", 36, QFont.Weight.Bold)
+    
+    def load_resources(self):
+        """載入遊戲資源（圖片和音樂）"""
+        try:
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(os.path.dirname(current_dir))
+            assets_path = os.path.join(project_root, "extensions", "Nagato-Sakura-Bounce-py", "data")
+            self.images: Dict[str, QPixmap] = {}
+            image_files = {
+                'player': 'player.png',
+                'ball': 'ball.png',
+                'small_enemy': 'small_enemy.png',
+                'medium_enemy': 'medium_enemy.png',
+                'large_enemy': 'large_enemy.png',
+                'boss_enemy': 'boss_enemy.png',
+                'boss2_enemy': 'boss2_enemy.png',
+                'background': 'background.png',
+                'scoreboard': 'scoreboard.png',
+                'bullet': 'bullet.png',
+                'laser': 'laser.png',
+                'wave': 'wave.png'
+            }
+            for key, filename in image_files.items():
+                image_path = os.path.join(assets_path, filename)
+                if os.path.exists(image_path):
+                    pixmap = QPixmap(image_path)
+                    if not pixmap.isNull():
+                        self.images[key] = pixmap
+                        logging.info(f"成功載入圖片: {filename}")
+                    else:
+                        logging.warning(f"無法載入圖片: {filename}")
+                        self.images[key] = self.create_default_image(key)
+                else:
+                    logging.warning(f"圖片檔案不存在: {image_path}")
+                    self.images[key] = self.create_default_image(key)
+            self.setup_background_music(assets_path)
+        except Exception as e:
+            logging.error(f"載入資源時發生錯誤: {e}")
+            for key in image_files.keys():
+                self.images[key] = self.create_default_image(key)
+    
+    def create_default_image(self, image_type: str) -> QPixmap:
+        """創建預設圖片"""
+        size_map = {
+            'player': (PLAYER_WIDTH, PLAYER_HEIGHT),
+            'ball': (int(BALL_RADIUS * 2), int(BALL_RADIUS * 2)),
+            'small_enemy': (90, 90),
+            'medium_enemy': (120, 120),
+            'large_enemy': (150, 150),
+            'boss_enemy': (200, 200),
+            'boss2_enemy': (250, 250),
+            'background': (GAME_WIDTH, WINDOW_HEIGHT),
+            'scoreboard': (WINDOW_WIDTH - GAME_WIDTH, WINDOW_HEIGHT),
+            'bullet': (20, 20),
+            'laser': (30, 80),
+            'wave': (30, 30)
+        }
+        color_map = {
+            'player': QColor(200, 200, 255),
+            'ball': QColor(255, 255, 255),
+            'small_enemy': QColor(100, 255, 100),
+            'medium_enemy': QColor(255, 255, 100),
+            'large_enemy': QColor(255, 100, 100),
+            'boss_enemy': QColor(255, 50, 255),
+            'boss2_enemy': QColor(200, 0, 200),
+            'background': QColor(0, 0, 30),
+            'scoreboard': QColor(30, 0, 30),
+            'bullet': QColor(255, 100, 100),
+            'laser': QColor(255, 0, 0),
+            'wave': QColor(0, 200, 255)
+        }
+        width, height = size_map.get(image_type, (50, 50))
+        color = color_map.get(image_type, QColor(255, 0, 255))
+        pixmap = QPixmap(width, height)
+        pixmap.fill(color)
+        return pixmap
+    
+    def setup_background_music(self, assets_path: str):
+        """設置背景音樂（使用 ffmpeg）"""
+        try:
+            bgm_path = os.path.join(assets_path, "bgm.mp3")
+            if os.path.exists(bgm_path):
+                self.bgm_path = bgm_path
+                self.music_process = None
+                self.music_thread = None
+                self.is_music_playing = False
+                self.should_stop_music = False
+                self.is_music_paused = False
+                self.start_music_thread()
+                logging.info(f"ffmpeg 背景音樂設置完成: {bgm_path}")
+            else:
+                logging.warning(f"背景音樂檔案不存在: {bgm_path}")
+                self.bgm_path = None
+        except Exception as e:
+            logging.error(f"設置背景音樂時發生錯誤: {e}")
+            self.bgm_path = None
+    
+    def start_music_thread(self):
+        """啟動音樂播放線程"""
+        if hasattr(self, 'bgm_path') and self.bgm_path:
+            self.should_stop_music = False
+            self.music_thread = threading.Thread(target=self._play_music_loop, daemon=True)
+            self.music_thread.start()
+            logging.info("音樂播放線程已啟動")
+    
+    def _play_music_loop(self):
+        """音樂播放循環（在背景線程中執行）"""
+        while not self.should_stop_music:
+            try:
+                if os.name == 'nt':  # Windows
+                    cmd = [
+                        'ffplay', 
+                        '-v', 'quiet',
+                        '-nodisp',  # 不顯示視窗
+                        '-loop', '0',  # 無限循環
+                        '-volume', '40',  # 音量 40%
+                        self.bgm_path
+                    ]
+                else:  # Linux/Mac
+                    cmd = [
+                        'ffplay', 
+                        '-v', 'quiet',
+                        '-nodisp',
+                        '-loop', '0',
+                        '-volume', '40',
+                        self.bgm_path
+                    ]
+                self.music_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                )
+                self.is_music_playing = True
+                logging.info("ffmpeg 背景音樂開始播放")
+                while self.music_process and self.music_process.poll() is None and not self.should_stop_music:
+                    time.sleep(0.1)
+                if not self.should_stop_music:
+                    logging.info("音樂播放結束，準備重新開始...")
+                    time.sleep(0.1)
+            except FileNotFoundError:
+                logging.error("ffplay 命令未找到，請確保 FFmpeg 已安裝並在 PATH 中")
+                break
+            except Exception as e:
+                logging.error(f"播放音樂時發生錯誤: {e}")
+                if not self.should_stop_music:
+                    time.sleep(1)
+            finally:
+                self.is_music_playing = False
+    
+    def start_music(self):
+        """延遲啟動音樂播放（ffmpeg 版本）"""
+        try:
+            if hasattr(self, 'bgm_path') and self.bgm_path and not self.is_music_playing:
+                self.start_music_thread()
+        except Exception as e:
+            logging.warning(f"啟動音樂時發生錯誤: {e}")
+    
+    def restart_music(self):
+        """重新啟動音樂播放（ffmpeg 版本）"""
+        try:
+            self.stop_music()
+            time.sleep(0.1)
+            self.start_music_thread()
+        except Exception as e:
+            logging.warning(f"重新啟動音樂時發生錯誤: {e}")
+    
+    def stop_music(self):
+        """停止音樂播放（ffmpeg 版本）"""
+        try:
+            self.should_stop_music = True
+            if hasattr(self, 'music_process') and self.music_process:
+                try:
+                    self.music_process.terminate()
+                    self.music_process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.music_process.kill()
+                except Exception:
+                    pass
+                finally:
+                    self.music_process = None
+            if hasattr(self, 'music_thread') and self.music_thread and self.music_thread.is_alive():
+                self.music_thread.join(timeout=1)
+            self.is_music_playing = False
+            logging.info("ffmpeg 背景音樂已停止")
+        except Exception as e:
+            logging.warning(f"停止音樂時發生錯誤: {e}")
+    
+    def pause_music(self):
+        """暫停音樂播放"""
+        try:
+            if self.is_music_playing and not self.is_music_paused:
+                self.should_stop_music = True
+                if hasattr(self, 'music_process') and self.music_process:
+                    try:
+                        self.music_process.terminate()
+                        self.music_process.wait(timeout=1)
+                    except:
+                        pass
+                    finally:
+                        self.music_process = None
+                self.is_music_paused = True
+                self.is_music_playing = False
+                logging.info("音樂已暫停（進程已停止）")
+        except Exception as e:
+            logging.warning(f"暫停音樂時發生錯誤: {e}")
+    
+    def resume_music(self):
+        """恢復音樂播放"""
+        try:
+            if self.is_music_paused:
+                self.is_music_paused = False
+                self.start_music_thread()
+                logging.info("音樂已恢復（重新啟動進程）")
+        except Exception as e:
+            logging.warning(f"恢復音樂時發生錯誤: {e}")
+    
+    def init_game(self):
+        self.game_over = False
+        self.is_paused = False
+        self.score = 0
+        self.boss_score_counter = 0
+        self.boss2_score_counter = 0
+        self.spawn_timer = 0
+        self.game_level = 1
+        if hasattr(self, 'is_music_paused'):
+            self.is_music_paused = False
+        self.player = Player()
+        self.balls: List[Ball] = []
+        self.enemies: List[Enemy] = []
+        self.bullets: List[Bullet] = []
+        self.add_ball()
+        for _ in range(3):
+            self.spawn_random_enemy()
+        self.mouse_x = GAME_WIDTH // 2
+    
+    def game_loop(self):
+        """主遊戲循環"""
+        if not self.game_over and not self.is_paused:
+            self.update_game()
+        self.frame_counter += 1
+        if self.frame_counter > 600:
+            self.frame_counter = 0
+        self.update()
+    
+    def update_game(self):
+        """更新遊戲邏輯"""
+        self.update_game_level()
+        self.player.update(self.mouse_x, self.game_level)
+        if not self.balls:
+            self.player.health -= 1
+            if self.player.health <= 0:
+                self.game_over = True
+            else:
+                self.add_ball()
+        for i in range(len(self.balls) - 1, -1, -1):
+            ball = self.balls[i]
+            ball.update()
+            if ball.check_player_collision(self.player):
+                relative_x = (ball.position.x - self.player.position.x) / (PLAYER_WIDTH / 2)
+                relative_x = max(-0.8, min(relative_x, 0.8))
+                angle = -math.pi / 4 + (relative_x + 0.8) * (math.pi / 2) / 1.6
+                new_dir = Vector2D.from_angle(-math.pi / 2 + angle)
+                ball.velocity = new_dir * BALL_SPEED
+            for j in range(len(self.enemies) - 1, -1, -1):
+                enemy = self.enemies[j]
+                if ball.check_enemy_collision(enemy):
+                    enemy.health -= 1
+                    if enemy.health <= 0:
+                        self.score += enemy.get_score()
+                        self.boss_score_counter += enemy.get_score()
+                        self.boss2_score_counter += enemy.get_score()
+                        drop_chance = enemy.get_drop_chance()
+                        if (enemy.type in [EnemyType.BOSS, EnemyType.BOSS_2] or random.random() < drop_chance):
+                            balls_to_add = 0
+                            health_to_add = 0
+                            if enemy.type == EnemyType.BOSS:
+                                balls_to_add = 3
+                                health_to_add = 3
+                            elif enemy.type == EnemyType.BOSS_2:
+                                balls_to_add = 5
+                                health_to_add = 5
+                            else:
+                                balls_to_add = random.randint(0, 3)
+                                health_to_add = random.randint(0, 3)
+                            for _ in range(balls_to_add):
+                                self.add_ball()
+                            self.player.health += health_to_add
+                        
+                        self.enemies.remove(enemy)
+                    break
+            if ball.position.y > WINDOW_HEIGHT:
+                self.balls.remove(ball)
+        for i, enemy in enumerate(self.enemies):
+            enemy.update(self.frame_counter)
+            for j in range(i + 1, len(self.enemies)):
+                enemy.check_collision(self.enemies[j])
+            if random.random() < enemy.get_shoot_chance():
+                self.enemy_shoot(enemy)
+        for i in range(len(self.bullets) - 1, -1, -1):
+            bullet = self.bullets[i]
+            bullet.update(self.frame_counter)
+            if not self.player.is_invincible and bullet.check_player_collision(self.player):
+                if self.player.take_damage():
+                    self.game_over = True
+                self.bullets.remove(bullet)
+                continue
+            if (bullet.position.y > WINDOW_HEIGHT or bullet.position.y < 0 or bullet.position.x < 0 or bullet.position.x > GAME_WIDTH):
+                self.bullets.remove(bullet)
+        self.spawn_timer += 1
+        spawn_interval = self.get_spawn_interval()
+        if (self.spawn_timer > spawn_interval and 
+            len(self.enemies) < 10 + self.game_level):
+            self.spawn_random_enemy()
+            self.spawn_timer = 0
+        if self.boss_score_counter >= BOSS_SCORE_THRESHOLD:
+            self.spawn_boss()
+            self.boss_score_counter = 0
+        if self.boss2_score_counter >= BOSS2_SCORE_THRESHOLD:
+            self.spawn_boss2()
+            self.boss2_score_counter = 0
+    
+    def update_game_level(self):
+        """更新遊戲等級"""
+        self.game_level = min(self.score // 500 + 1, 100)
+    
+    def get_spawn_interval(self):
+        """獲取生怪間隔"""
+        return max(50, 150 - self.game_level)
+    
+    def add_ball(self):
+        """添加新球"""
+        position = Vector2D(self.player.position.x, self.player.position.y - PLAYER_HEIGHT // 2 - BALL_RADIUS)
+        velocity = Vector2D.from_angle(-math.pi / 2) * BALL_SPEED
+        self.balls.append(Ball(position, velocity))
+    
+    def spawn_random_enemy(self):
+        """隨機生成敵人"""
+        rand = random.random()
+        small_prob = max(0.1, 1 - (self.game_level * 0.01))
+        medium_prob = max(0, self.game_level * 0.007)
+        large_prob = max(0, self.game_level * 0.003)
+        total = small_prob + medium_prob + large_prob
+        small_prob /= total
+        medium_prob /= total
+        if rand < small_prob:
+            self.spawn_enemy(EnemyType.SMALL)
+        elif rand < small_prob + medium_prob:
+            self.spawn_enemy(EnemyType.MEDIUM)
+        else:
+            self.spawn_enemy(EnemyType.LARGE)
+    
+    def spawn_enemy(self, enemy_type: EnemyType):
+        """生成指定類型的敵人"""
+        attempts = 0
+        while attempts < 50:
+            x = random.uniform(100, GAME_WIDTH - 100)
+            y = random.uniform(100, WINDOW_HEIGHT / 2)
+            valid_position = True
+            size_map = {
+                EnemyType.SMALL: 30,
+                EnemyType.MEDIUM: 50, 
+                EnemyType.LARGE: 80,
+                EnemyType.BOSS: 120,
+                EnemyType.BOSS_2: 160
+            }
+            size = size_map[enemy_type]
+            for enemy in self.enemies:
+                min_dist = size / 2 + enemy.size / 2 + 10
+                if Vector2D(x, y).dist(enemy.position) < min_dist:
+                    valid_position = False
+                    break
+            if valid_position:
+                self.enemies.append(Enemy(Vector2D(x, y), enemy_type))
+                break
+            attempts += 1
+    
+    def spawn_boss(self):
+        """生成Boss"""
+        position = Vector2D(GAME_WIDTH / 2, 150)
+        self.enemies.append(Enemy(position, EnemyType.BOSS))
+    
+    def spawn_boss2(self):
+        """生成超級Boss"""
+        position = Vector2D(GAME_WIDTH / 2, 200)
+        self.enemies.append(Enemy(position, EnemyType.BOSS_2))
+    
+    def enemy_shoot(self, enemy: Enemy):
+        """敵人射擊邏輯"""
+        if enemy.type == EnemyType.SMALL:
+            direction = Vector2D(0, 1)
+            self.bullets.append(Bullet(enemy.position.copy(), direction * 3, QColor(0, 255, 0), BulletType.NORMAL))
+        elif enemy.type == EnemyType.MEDIUM:
+            # 三發散射
+            for i in range(-1, 2):
+                direction = Vector2D.from_angle(math.pi / 2 + i * 0.2)
+                self.bullets.append(Bullet(enemy.position.copy(), direction * 3, QColor(255, 255, 0), BulletType.NORMAL))
+        elif enemy.type == EnemyType.LARGE:
+            # 圓形散射
+            for i in range(9):
+                direction = Vector2D.from_angle(math.pi / 2 + i * 2 * math.pi / 9)
+                self.bullets.append(Bullet(enemy.position.copy(), direction * 2.5, QColor(255, 100, 0), BulletType.NORMAL))
+        elif enemy.type == EnemyType.BOSS:
+            # 追蹤彈
+            to_player = (self.player.position - enemy.position).normalize() * 4
+            self.bullets.append(Bullet(enemy.position.copy(), to_player, QColor(255, 0, 255), BulletType.NORMAL))
+            # 圓形散射
+            for i in range(9):
+                direction = Vector2D.from_angle(self.frame_counter * 0.02 + i * 2 * math.pi / 9)
+                self.bullets.append(Bullet(enemy.position.copy(), direction * 3, QColor(255, 0, 100), BulletType.NORMAL))
+        elif enemy.type == EnemyType.BOSS_2:
+            if enemy.attack_mode == 0:
+                # 三重追蹤彈 + 螺旋彈幕
+                to_player = (self.player.position - enemy.position).normalize() * 5
+                # 主追蹤彈
+                self.bullets.append(Bullet(enemy.position.copy(), to_player.copy(), QColor(200, 0, 200), BulletType.NORMAL))
+                # 側翼追蹤彈
+                offset1 = Vector2D(to_player.y, -to_player.x) * 0.3
+                offset2 = Vector2D(-to_player.y, to_player.x) * 0.3
+                self.bullets.append(Bullet(enemy.position.copy(), (to_player + offset1) * 0.8, QColor(200, 0, 200), BulletType.NORMAL))
+                self.bullets.append(Bullet(enemy.position.copy(), (to_player + offset2) * 0.8, QColor(200, 0, 200), BulletType.NORMAL))
+                # 螺旋彈幕
+                for i in range(9):
+                    angle = self.frame_counter * 0.03 + i * 2 * math.pi / 9
+                    direction = Vector2D.from_angle(angle)
+                    self.bullets.append(Bullet(enemy.position.copy(), direction * 3, QColor(230, 100, 230), BulletType.NORMAL))
+            elif enemy.attack_mode == 1:
+                # 雷射攻擊 - 玩家方向雷射
+                laser_dir = (self.player.position - enemy.position).normalize() * 6
+                self.bullets.append(Bullet(enemy.position.copy(), laser_dir, QColor(255, 0, 0), BulletType.LASER))
+                # 固定方向的雷射
+                laser_count = 3
+                for i in range(laser_count):
+                    angle = self.frame_counter * 0.01 + i * 2 * math.pi / laser_count
+                    direction = Vector2D.from_angle(angle)
+                    self.bullets.append(Bullet(enemy.position.copy(), direction * 5, QColor(255, 100, 100), BulletType.LASER))
+            elif enemy.attack_mode == 2:
+                # 波形彈幕 + 爆炸彈
+                for i in range(9):
+                    angle = i * 2 * math.pi / 9
+                    direction = Vector2D.from_angle(angle)
+                    speed = 3 + math.sin(self.frame_counter * 0.1 + i) * 0.5
+                    self.bullets.append(Bullet(enemy.position.copy(), direction * speed, QColor(0, 200, 255), BulletType.WAVE))
+                # 爆炸彈
+                if self.frame_counter % 24 == 0:
+                    x = random.uniform(100, GAME_WIDTH - 100)
+                    y = random.uniform(100, WINDOW_HEIGHT * 2 / 3)
+                    for i in range(9):
+                        explode_angle = i * 2 * math.pi / 9
+                        explode_dir = Vector2D.from_angle(explode_angle)
+                        self.bullets.append(Bullet(Vector2D(x, y), explode_dir * 2, QColor(100, 200, 255), BulletType.NORMAL))
+            
+            elif enemy.attack_mode == 3:
+                # 隨機彈幕 + 陷阱彈幕
+                for i in range(12):
+                    random_angle = random.uniform(0, 2 * math.pi)
+                    random_speed = random.uniform(2, 4)
+                    direction = Vector2D.from_angle(random_angle)
+                    self.bullets.append(Bullet(enemy.position.copy(), direction * random_speed, QColor(255, 200, 0), BulletType.NORMAL))
+                # 陷阱彈幕
+                if self.frame_counter % 30 == 0:
+                    target_x = self.player.position.x + random.uniform(-150, 150)
+                    target_y = self.player.position.y + random.uniform(-100, 0)
+                    target_x = max(50, min(target_x, GAME_WIDTH - 50))
+                    target_y = max(50, min(target_y, WINDOW_HEIGHT - 50))
+                    for i in range(7):
+                        trap_angle = i * 2 * math.pi / 7
+                        trap_dir = Vector2D.from_angle(trap_angle)
+                        self.bullets.append(Bullet(Vector2D(target_x, target_y), trap_dir * 0.1, QColor(255, 150, 0), BulletType.TRAP))
+    
+    def paintEvent(self, event: QPaintEvent):
+        """繪製遊戲畫面"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if not self.game_over:
+            self.draw_game(painter)
+            self.draw_ui(painter)
+            if self.is_paused:
+                self.draw_pause_overlay(painter)
+        else:
+            self.draw_game_over(painter)
+    
+    def draw_game(self, painter: QPainter):
+        """繪製遊戲場景"""
+        if 'background' in self.images:
+            background_img = self.images['background'].scaled(
+                GAME_WIDTH, WINDOW_HEIGHT, Qt.AspectRatioMode.IgnoreAspectRatio)
+            painter.drawPixmap(0, 0, background_img)
+        else:
+            painter.fillRect(0, 0, GAME_WIDTH, WINDOW_HEIGHT, QColor(0, 0, 30))
+        if 'scoreboard' in self.images:
+            scoreboard_img = self.images['scoreboard'].scaled(
+                WINDOW_WIDTH - GAME_WIDTH, WINDOW_HEIGHT, Qt.AspectRatioMode.IgnoreAspectRatio)
+            painter.drawPixmap(GAME_WIDTH, 0, scoreboard_img)
+        else:
+            painter.fillRect(GAME_WIDTH, 0, WINDOW_WIDTH - GAME_WIDTH, WINDOW_HEIGHT, QColor(30, 0, 30))
+        painter.setPen(QPen(QColor(255, 255, 255), 2))
+        painter.drawLine(GAME_WIDTH, 0, GAME_WIDTH, WINDOW_HEIGHT)
+        self.draw_player(painter)
+        for ball in self.balls:
+            self.draw_ball(painter, ball)
+        for enemy in self.enemies:
+            self.draw_enemy(painter, enemy)
+        for bullet in self.bullets:
+            self.draw_bullet(painter, bullet)
+    
+    def draw_player(self, painter: QPainter):
+        """繪製玩家"""
+        if 'player' in self.images:
+            original_img = self.images['player']
+            ratio = min(PLAYER_WIDTH / original_img.width(), PLAYER_HEIGHT / original_img.height())
+            new_width = int(original_img.width() * ratio)
+            new_height = int(original_img.height() * ratio)
+            player_img = original_img.scaled(
+                new_width, new_height, Qt.AspectRatioMode.KeepAspectRatio, 
+                Qt.TransformationMode.SmoothTransformation)
+            if self.player.is_invincible and self.frame_counter % 8 < 4:
+                painter.setOpacity(0.5)
+            else:
+                painter.setOpacity(1.0)
+            offset_x = (PLAYER_WIDTH - new_width) // 2
+            offset_y = (PLAYER_HEIGHT - new_height) // 2
+            img_rect = QRectF(
+                self.player.position.x - PLAYER_WIDTH // 2 + offset_x,
+                self.player.position.y - PLAYER_HEIGHT // 2 + offset_y,
+                new_width, new_height
+            )
+            painter.drawPixmap(img_rect, player_img, QRectF(player_img.rect()))
+            painter.setOpacity(1.0)
+        else:
+            if self.player.is_invincible and self.frame_counter % 8 < 4:
+                painter.setBrush(QBrush(QColor(200, 200, 255, 100)))
+            else:
+                painter.setBrush(QBrush(QColor(200, 200, 255)))
+            painter.setPen(QPen(QColor(255, 255, 255), 2))
+            rect = QRectF(self.player.position.x - PLAYER_WIDTH // 2,self.player.position.y - PLAYER_HEIGHT // 2, PLAYER_WIDTH, PLAYER_HEIGHT)
+            painter.drawRect(rect)
+        painter.setBrush(QBrush(QColor(255, 0, 0)))
+        painter.drawEllipse(QPointF(self.player.position.x, self.player.position.y), 5, 5)
+        if self.player.is_invincible:
+            current_invincible_time = max(MIN_INVINCIBLE_TIME, BASE_INVINCIBLE_TIME - self.game_level)
+            invincible_ratio = self.player.invincible_counter / current_invincible_time
+            painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+            painter.setPen(QPen(QColor(50, 150, 255, 200), 3))
+            remaining_ratio = 1 - invincible_ratio
+            start_angle = (270 + 180) * 16
+            span_angle = int(360 * 16 * remaining_ratio)
+            rect = QRectF(self.player.position.x - 60, self.player.position.y - 60, 120, 120)
+            painter.drawArc(rect, start_angle, span_angle)
+    
+    def draw_ball(self, painter: QPainter, ball: Ball):
+        """繪製球"""
+        if 'ball' in self.images:
+            ball_img = self.images['ball'].scaled(
+                int(BALL_RADIUS * 2), int(BALL_RADIUS * 2), Qt.AspectRatioMode.KeepAspectRatio)
+            painter.save()
+            painter.translate(ball.position.x, ball.position.y)
+            painter.rotate(math.degrees(ball.rotation))
+            img_rect = QRectF(-BALL_RADIUS, -BALL_RADIUS, BALL_RADIUS * 2, BALL_RADIUS * 2)
+            painter.drawPixmap(img_rect, ball_img, QRectF(ball_img.rect()))
+            painter.restore()
+        else:
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            painter.setPen(QPen(QColor(200, 200, 200), 2))
+            painter.save()
+            painter.translate(ball.position.x, ball.position.y)
+            painter.rotate(math.degrees(ball.rotation))
+            painter.drawEllipse(-BALL_RADIUS, -BALL_RADIUS, BALL_RADIUS * 2, BALL_RADIUS * 2)
+            painter.setPen(QPen(QColor(100, 100, 100), 1))
+            painter.drawLine(-BALL_RADIUS // 2, 0, BALL_RADIUS // 2, 0)
+            painter.restore()
+    
+    def draw_enemy(self, painter: QPainter, enemy: Enemy):
+        """繪製敵人"""
+        image_key_map = {
+            EnemyType.SMALL: 'small_enemy',
+            EnemyType.MEDIUM: 'medium_enemy',
+            EnemyType.LARGE: 'large_enemy',
+            EnemyType.BOSS: 'boss_enemy',
+            EnemyType.BOSS_2: 'boss2_enemy'
+        }
+        image_key = image_key_map.get(enemy.type, 'small_enemy')
+        if image_key in self.images:
+            enemy_img = self.images[image_key].scaled(int(enemy.size), int(enemy.size), Qt.AspectRatioMode.KeepAspectRatio)
+            img_rect = QRectF(
+                enemy.position.x - enemy.size // 2,
+                enemy.position.y - enemy.size // 2,
+                enemy.size, enemy.size
+            )
+            painter.drawPixmap(img_rect, enemy_img, QRectF(enemy_img.rect()))
+        else:
+            painter.setBrush(QBrush(enemy.color))
+            painter.setPen(QPen(QColor(255, 255, 255), 2))
+            rect = QRectF(enemy.position.x - enemy.size // 2, enemy.position.y - enemy.size // 2, enemy.size, enemy.size)
+            painter.drawEllipse(rect)
+        
+        # 繪製Boss血量環
+        if enemy.type in [EnemyType.BOSS, EnemyType.BOSS_2]:
+            max_health = 50.0 if enemy.type == EnemyType.BOSS else 100.0
+            health_ratio = enemy.health / max_health
+            radius = (enemy.size + 30) / 2.0
+            painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+            painter.setPen(QPen(QColor(100, 100, 100), 3))
+            bg_rect = QRectF(enemy.position.x - radius, enemy.position.y - radius, radius * 2, radius * 2)
+            painter.drawEllipse(bg_rect)
+            if enemy.type == EnemyType.BOSS:
+                painter.setPen(QPen(QColor(255, 50, 50), 3))
+            else:
+                # Boss2根據攻擊模式顯示不同顏色
+                colors = [
+                    QColor(200, 0, 200),   # 紫色 - 追蹤彈幕
+                    QColor(255, 0, 0),     # 紅色 - 雷射攻擊
+                    QColor(0, 200, 255),   # 藍色 - 波形彈幕
+                    QColor(255, 200, 0)    # 黃色 - 隨機散射
+                ]
+                painter.setPen(QPen(colors[enemy.attack_mode], 3))
+            start_angle = (-90 + 180) * 16
+            span_angle = int(360 * 16 * health_ratio)
+            painter.drawArc(bg_rect, start_angle, span_angle)
+    
+    def draw_bullet(self, painter: QPainter, bullet: Bullet):
+        """繪製子彈"""
+        if bullet.type == BulletType.NORMAL:
+            if 'bullet' in self.images:
+                bullet_img = self.images['bullet'].scaled(
+                    bullet.size, bullet.size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                img_rect = QRectF(
+                    bullet.position.x - bullet.size // 2,
+                    bullet.position.y - bullet.size // 2,
+                    bullet.size, bullet.size
+                )
+                painter.drawPixmap(img_rect, bullet_img, QRectF(bullet_img.rect()))
+            else:
+                painter.setBrush(QBrush(bullet.color))
+                painter.setPen(QPen(bullet.color, 1))
+                painter.drawEllipse(QPointF(bullet.position.x, bullet.position.y), bullet.size // 2, bullet.size // 2)
+        elif bullet.type == BulletType.LASER:
+            if 'laser' in self.images:
+                laser_img = self.images['laser'].scaled(
+                    20, bullet.size * 4, Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation)
+                alpha = max(50, int(255 * bullet.lifespan / 60))
+                painter.setOpacity(alpha / 255.0)
+                painter.save()
+                painter.translate(bullet.position.x, bullet.position.y)
+                rotation_angle = math.degrees(bullet.angle) + 90
+                painter.rotate(rotation_angle)
+                img_rect = QRectF(
+                    -10, -bullet.size * 2,
+                    20, bullet.size * 4
+                )
+                painter.drawPixmap(img_rect, laser_img, QRectF(laser_img.rect()))
+                painter.restore()
+                painter.setOpacity(1.0)
+            else:
+                alpha = max(50, int(255 * bullet.lifespan / 60))
+                laser_color = QColor(bullet.color.red(), bullet.color.green(), bullet.color.blue(), alpha)
+                painter.setBrush(QBrush(laser_color))
+                painter.setPen(QPen(laser_color, 2))
+                painter.save()
+                painter.translate(bullet.position.x, bullet.position.y)
+                rotation_angle = math.degrees(bullet.angle) + 90
+                painter.rotate(rotation_angle)
+                rect = QRectF(-10, -bullet.size * 2, 20, bullet.size * 4)
+                painter.drawRect(rect)
+                painter.restore()
+        elif bullet.type == BulletType.WAVE:
+            if 'wave' in self.images:
+                wave_img = self.images['wave'].scaled(
+                    bullet.size, bullet.size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                img_rect = QRectF(
+                    bullet.position.x - bullet.size // 2,
+                    bullet.position.y - bullet.size // 2,
+                    bullet.size, bullet.size
+                )
+                painter.drawPixmap(img_rect, wave_img, QRectF(wave_img.rect()))
+            else:
+                painter.setBrush(QBrush(bullet.color))
+                painter.setPen(QPen(bullet.color, 1))
+                painter.drawEllipse(QPointF(bullet.position.x, bullet.position.y),
+                                  bullet.size // 2, bullet.size // 2)
+        elif bullet.type == BulletType.TRAP:
+            if 'bullet' in self.images:
+                bullet_img = self.images['bullet'].scaled(
+                    bullet.size, bullet.size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                if not bullet.activated:
+                    alpha = int(150 + 105 * math.sin(self.frame_counter * 0.2))
+                    scale = 0.8 + 0.4 * math.sin(self.frame_counter * 0.3)
+                    painter.setOpacity(alpha / 255.0)
+                    size = bullet.size * scale
+                    img_rect = QRectF(
+                        bullet.position.x - size // 2,
+                        bullet.position.y - size // 2,
+                        size, size
+                    )
+                    painter.drawPixmap(img_rect, bullet_img, QRectF(bullet_img.rect()))
+                    painter.setOpacity(1.0)
+                else:
+                    img_rect = QRectF(
+                        bullet.position.x - bullet.size // 2,
+                        bullet.position.y - bullet.size // 2,
+                        bullet.size, bullet.size
+                    )
+                    painter.drawPixmap(img_rect, bullet_img, QRectF(bullet_img.rect()))
+            else:
+                painter.setBrush(QBrush(bullet.color))
+                painter.setPen(QPen(bullet.color, 1))
+                if not bullet.activated:
+                    alpha = int(150 + 105 * math.sin(self.frame_counter * 0.2))
+                    scale = 0.8 + 0.4 * math.sin(self.frame_counter * 0.3)
+                    trap_color = QColor(bullet.color.red(), bullet.color.green(), bullet.color.blue(), alpha)
+                    painter.setBrush(QBrush(trap_color))
+                    size = bullet.size * scale
+                    painter.drawEllipse(QPointF(bullet.position.x, bullet.position.y), size // 2, size // 2)
+                else:
+                    painter.drawEllipse(QPointF(bullet.position.x, bullet.position.y), bullet.size // 2, bullet.size // 2)
+    
+    def draw_ui(self, painter: QPainter):
+        """繪製遊戲UI"""
+        painter.setPen(QPen(QColor(255, 255, 255)))
+        painter.setFont(QFont("Microsoft YaHei", 18, QFont.Weight.Bold))
+        painter.drawText(GAME_WIDTH + 20, 50, "長門櫻 彈跳球")
+        painter.setFont(self.font)
+        painter.drawText(GAME_WIDTH + 20, 100, f"分數: {self.score}")
+        painter.drawText(GAME_WIDTH + 20, 140, f"生命: {self.player.health}")
+        painter.drawText(GAME_WIDTH + 20, 180, f"球數: {len(self.balls)}")
+        painter.drawText(GAME_WIDTH + 20, 220, f"等級: {self.game_level}")
+        current_invincible_time = max(MIN_INVINCIBLE_TIME, BASE_INVINCIBLE_TIME - self.game_level)
+        painter.drawText(GAME_WIDTH + 20, 260, f"無敵時間: {current_invincible_time/60.0:.1f}s")
+        boss_progress = min(1.0, self.boss_score_counter / BOSS_SCORE_THRESHOLD)
+        painter.drawText(GAME_WIDTH + 20, 300, "BOSS 進度:")
+        painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        painter.setPen(QPen(QColor(255, 255, 255), 2))
+        painter.drawRect(GAME_WIDTH + 20, 310, 300, 20)
+        painter.setBrush(QBrush(QColor(255, 0, 0)))
+        painter.setPen(QPen(Qt.PenStyle.NoPen))
+        painter.drawRect(GAME_WIDTH + 20, 310, int(300 * boss_progress), 20)
+        boss2_progress = min(1.0, self.boss2_score_counter / BOSS2_SCORE_THRESHOLD)
+        painter.setPen(QPen(QColor(255, 255, 255)))
+        painter.drawText(GAME_WIDTH + 20, 360, "超級BOSS 進度:")
+        painter.setBrush(QBrush(Qt.BrushStyle.NoBrush))
+        painter.setPen(QPen(QColor(255, 255, 255), 2))
+        painter.drawRect(GAME_WIDTH + 20, 370, 300, 20)
+        painter.setBrush(QBrush(QColor(200, 0, 200)))
+        painter.setPen(QPen(Qt.PenStyle.NoPen))
+        painter.drawRect(GAME_WIDTH + 20, 370, int(300 * boss2_progress), 20)
+        painter.setPen(QPen(QColor(255, 255, 255)))
+        painter.drawText(GAME_WIDTH + 20, 950, "開發者: 天野靜樹")
+        painter.setFont(QFont("Microsoft YaHei", 10))
+        painter.setPen(QPen(QColor(200, 200, 200)))
+        painter.drawText(GAME_WIDTH + 20, 420, "遊戲控制:")
+        painter.drawText(GAME_WIDTH + 20, 440, "空白鍵 / P - 暫停/繼續")
+        painter.drawText(GAME_WIDTH + 20, 460, "ESC - 退出遊戲")
+        if self.is_paused:
+            painter.setFont(QFont("Microsoft YaHei", 14, QFont.Weight.Bold))
+            painter.setPen(QPen(QColor(255, 255, 0)))
+            painter.drawText(GAME_WIDTH + 20, 500, "【遊戲已暫停】")
+    
+    def draw_pause_overlay(self, painter: QPainter):
+        """繪製暫停覆蓋層"""
+        overlay_color = QColor(0, 0, 0, 150)
+        painter.fillRect(0, 0, GAME_WIDTH, WINDOW_HEIGHT, overlay_color)
+        painter.setPen(QPen(QColor(255, 255, 255)))
+        painter.setFont(QFont("Microsoft YaHei", 48, QFont.Weight.Bold))
+        pause_text = "遊戲暫停"
+        text_rect = QRectF(0, WINDOW_HEIGHT / 2 - 120, GAME_WIDTH, 80)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, pause_text)
+        painter.setFont(QFont("Microsoft YaHei", 16))
+        hint_text = "按空白鍵或P鍵繼續遊戲"
+        hint_rect = QRectF(0, WINDOW_HEIGHT / 2 - 20, GAME_WIDTH, 40)
+        painter.drawText(hint_rect, Qt.AlignmentFlag.AlignCenter, hint_text)
+        click_text = "或點擊畫面繼續"
+        click_rect = QRectF(0, WINDOW_HEIGHT / 2 + 20, GAME_WIDTH, 40)
+        painter.drawText(click_rect, Qt.AlignmentFlag.AlignCenter, click_text)
+        exit_text = "按ESC鍵退出遊戲"
+        exit_rect = QRectF(0, WINDOW_HEIGHT / 2 + 60, GAME_WIDTH, 40)
+        painter.setPen(QPen(QColor(255, 200, 200)))
+        painter.drawText(exit_rect, Qt.AlignmentFlag.AlignCenter, exit_text)
+    
+    def draw_game_over(self, painter: QPainter):
+        """繪製遊戲結束畫面"""
+        if 'background' in self.images:
+            background_img = self.images['background'].scaled(
+                GAME_WIDTH, WINDOW_HEIGHT, Qt.AspectRatioMode.IgnoreAspectRatio)
+            painter.drawPixmap(0, 0, background_img)
+        else:
+            painter.fillRect(0, 0, GAME_WIDTH, WINDOW_HEIGHT, QColor(0, 0, 30))
+        if 'scoreboard' in self.images:
+            scoreboard_img = self.images['scoreboard'].scaled(
+                WINDOW_WIDTH - GAME_WIDTH, WINDOW_HEIGHT, Qt.AspectRatioMode.IgnoreAspectRatio)
+            painter.drawPixmap(GAME_WIDTH, 0, scoreboard_img)
+        else:
+            painter.fillRect(GAME_WIDTH, 0, WINDOW_WIDTH - GAME_WIDTH, WINDOW_HEIGHT, QColor(30, 0, 30))
+        
+        painter.setPen(QPen(QColor(255, 255, 255)))
+        painter.setFont(self.game_over_font)
+        text_rect = QRectF((WINDOW_WIDTH - 600) / 2 - 200, WINDOW_HEIGHT / 2 - 100, 400, 100)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "遊戲結束")
+        painter.setFont(QFont("Microsoft YaHei", 20))
+        score_rect = QRectF((WINDOW_WIDTH - 600) / 2 - 200, WINDOW_HEIGHT / 2, 400, 50)
+        painter.drawText(score_rect, Qt.AlignmentFlag.AlignCenter, f"最終分數: {self.score}")
+        restart_rect = QRectF((WINDOW_WIDTH - 600) / 2 - 200, WINDOW_HEIGHT / 2 + 80, 400, 50)
+        painter.drawText(restart_rect, Qt.AlignmentFlag.AlignCenter, "點擊重新開始")
+    
+    def mouseMoveEvent(self, event: QMouseEvent):
+        """處理滑鼠移動事件"""
+        self.mouse_x = event.position().x()
+    
+    def mousePressEvent(self, event: QMouseEvent):
+        """處理滑鼠點擊事件"""
+        if self.game_over:
+            self.restart_game()
+        elif self.is_paused:
+            self.toggle_pause()
+    
+    def keyPressEvent(self, event: QKeyEvent):
+        """處理鍵盤按鍵事件"""
+        if event.key() == Qt.Key.Key_Space:
+            if not self.game_over:
+                self.toggle_pause()
+        elif event.key() == Qt.Key.Key_Escape:
+            self.close()
+        elif event.key() == Qt.Key.Key_P:
+            if not self.game_over:
+                self.toggle_pause()
+        super().keyPressEvent(event)
+    
+    def toggle_pause(self):
+        """切換暫停狀態"""
+        if not self.game_over:
+            self.is_paused = not self.is_paused
+            if self.is_paused:
+                self.pause_music()
+                logging.info("遊戲暫停，音樂已暫停")
+            else:
+                self.resume_music()
+                logging.info("遊戲繼續，音樂已恢復")
+            logging.info(f"遊戲{'暫停' if self.is_paused else '繼續'}")
+    
+    def restart_game(self):
+        """重新開始遊戲"""
+        if self.is_paused:
+            self.is_paused = False
+        self.init_game()
+        if hasattr(self, 'bgm_path') and self.bgm_path:
+            self.stop_music()
+            time.sleep(0.1)
+            self.start_music_thread()
+    
+    def closeEvent(self, event):
+        """處理窗口關閉事件"""
+        try:
+            logging.info("正在關閉遊戲...")
+            if hasattr(self, 'game_timer'):
+                self.game_timer.stop()
+                logging.info("遊戲計時器已停止")
+            self.force_stop_music()
+            logging.info("遊戲關閉完成")
+        except Exception as e:
+            logging.error(f"關閉遊戲時發生錯誤: {e}")
+        super().closeEvent(event)
+    
+    def force_stop_music(self):
+        """強制停止音樂播放（確保徹底清理）"""
+        try:
+            logging.info("強制停止音樂...")
+            self.should_stop_music = True
+            self.is_music_paused = False
+            if hasattr(self, 'music_process') and self.music_process:
+                try:
+                    self.music_process.terminate()
+                    self.music_process.wait(timeout=1)
+                    logging.info("ffplay 進程已正常終止")
+                except subprocess.TimeoutExpired:
+                    logging.warning("ffplay 進程未正常終止，強制殺死")
+                    self.music_process.kill()
+                    try:
+                        self.music_process.wait(timeout=1)
+                    except:
+                        pass
+                except Exception as e:
+                    logging.error(f"終止 ffplay 進程時發生錯誤: {e}")
+                finally:
+                    self.music_process = None
+            if hasattr(self, 'music_thread') and self.music_thread and self.music_thread.is_alive():
+                logging.info("等待音樂線程結束...")
+                self.music_thread.join(timeout=2)
+                if self.music_thread.is_alive():
+                    logging.warning("音樂線程未能在時限內結束")
+                else:
+                    logging.info("音樂線程已結束")
+            self.is_music_playing = False
+            logging.info("音樂播放已完全停止")
+            try:
+                if os.name == 'nt':  # Windows
+                    subprocess.run(['taskkill', '/f', '/im', 'ffplay.exe'], 
+                                 capture_output=True, timeout=3)
+                else:  # Linux/Mac
+                    subprocess.run(['pkill', '-f', 'ffplay'], 
+                                 capture_output=True, timeout=3)
+                logging.info("已清理任何殘留的 ffplay 進程")
+            except Exception as e:
+                logging.debug(f"清理殘留進程時發生錯誤（可能正常）: {e}")
+        except Exception as e:
+            logging.error(f"強制停止音樂時發生錯誤: {e}")
+
+
+class EasterEggDialog(QDialog):
+    """彩蛋遊戲對話框"""
+    
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumSize(SCREEN_WIDTH, SCREEN_HEIGHT)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setMouseTracking(True)
-        self.player_x = 3.5 * CELL_SIZE
-        self.player_y = 3.5 * CELL_SIZE
-        self.player_angle = math.pi / 4
-        self.fov = math.pi / 3
-        self.move_speed = 15.0
-        self.rot_speed = 0.08 # 旋轉速度 (未使用，改由滑鼠控制)
-        self.strafe_speed = 10.0
-        self.nagato_found = False
-        self.nagato_dialogue_index = 0
-        self.nagato_interaction_timer = 0
-        self.nagato_animation_offset = 0.0 
-        self.cherry_blossom_animation = 0.0 
-        self.show_victory = False
-        self.victory_time = 0
-
-        # 載入長門櫻圖示
-        self.nagato_icon = QPixmap(NAGATO_ICON_PATH)
-        if self.nagato_icon.isNull():
-            print(f"警告：無法載入長門櫻圖示於 {NAGATO_ICON_PATH}")
-            self.nagato_icon = None
-
-        # 櫻花飄落效果
-        self.falling_petals = []
-        for _ in range(30):
-            self.falling_petals.append({
-                'x': random.uniform(0, SCREEN_WIDTH),
-                'y': random.uniform(0, SCREEN_HEIGHT),
-                'size': random.uniform(3, 8),
-                'speed': random.uniform(1, 3),
-                'wobble': random.uniform(0, 2 * math.pi),
-                'wobble_speed': random.uniform(0.01, 0.05)
-            })
-
-        # 按鍵狀態
-        self.key_forward = False
-        self.key_backward = False
-        self.key_left = False
-        self.key_right = False
-        self.key_interact = False
-
-        # 滑鼠控制
-        self.mouse_active = False
-        self.mouse_center = QPoint(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
-        self.last_mouse_pos = self.mouse_center
-        self.screen_center = self.mapToGlobal(self.mouse_center) 
-
-        # 牆壁顏色
-        self.wall_colors = {
-            1: QColor(255, 182, 193),
-            2: QColor(255, 105, 180),
-        }
-        self.dark_factor = 0.7 
-
-        # 遊戲計時器
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.update_game)
-        self.timer.start(16) 
-        self.last_time = time.time()
-        self.show_instructions = True
-        self.instructions_timer = QTimer(self)
-        self.instructions_timer.setSingleShot(True)
-        self.instructions_timer.timeout.connect(self.hide_instructions)
-        self.instructions_timer.start(5000) 
-
-        # 當前對話文字
-        self.current_dialogue = ""
-        self.dialogue_timer = QTimer(self)
-        self.dialogue_timer.timeout.connect(self.update_dialogue)
-        self.footstep_timer = 0 
-
-    def hide_instructions(self):
-        self.show_instructions = False
-
-    def update_dialogue(self):
-        """隨機更新長門櫻的對話"""
-        if self.nagato_found and not self.show_victory:
-            self.current_dialogue = random.choice(NAGATO_DIALOGUES)
-            self.dialogue_timer.start(random.randint(3000, 6000))
-
-    def update_game(self):
-        """更新遊戲狀態"""
-        current_time = time.time()
-        delta_time = current_time - self.last_time
-        self.last_time = current_time
-        actual_move_speed = self.move_speed * delta_time * 10
-        actual_strafe_speed = self.strafe_speed * delta_time * 10
-
-        # 勝利畫面處理
-        if self.nagato_found and self.show_victory:
-            self.victory_time += delta_time
-            # 更新勝利畫面的櫻花飄落
-            for petal in self.falling_petals:
-                petal['y'] += petal['speed'] * delta_time * 30
-                petal['wobble'] += petal['wobble_speed']
-                petal['x'] += math.sin(petal['wobble']) * 0.5
-                if petal['y'] > SCREEN_HEIGHT:
-                    petal['y'] = 0
-                    petal['x'] = random.uniform(0, SCREEN_WIDTH)
-            self.cherry_blossom_animation += delta_time * 2
-            self.update()
-            return
-
-        # 移動計算
-        move_x = 0.0
-        move_y = 0.0
-        if self.key_forward:
-            move_x += math.cos(self.player_angle) * actual_move_speed
-            move_y += math.sin(self.player_angle) * actual_move_speed
-            self.footstep_timer += delta_time
-        if self.key_backward:
-            move_x -= math.cos(self.player_angle) * actual_move_speed
-            move_y -= math.sin(self.player_angle) * actual_move_speed
-            self.footstep_timer += delta_time
-        if self.key_left:
-            move_x += math.cos(self.player_angle - math.pi/2) * actual_strafe_speed
-            move_y += math.sin(self.player_angle - math.pi/2) * actual_strafe_speed
-            self.footstep_timer += delta_time
-        if self.key_right:
-            move_x += math.cos(self.player_angle + math.pi/2) * actual_strafe_speed
-            move_y += math.sin(self.player_angle + math.pi/2) * actual_strafe_speed
-            self.footstep_timer += delta_time
-
-        # 碰撞檢測
-        next_x = self.player_x + move_x
-        next_y = self.player_y + move_y
-        map_x = int(next_x / CELL_SIZE)
-        map_y = int(next_y / CELL_SIZE)
-        if 0 <= map_x < MAP_WIDTH and 0 <= map_y < MAP_HEIGHT:
-            if world_map[map_y][map_x] == 0 or world_map[map_y][map_x] == 3: # 可通行
-                self.player_x = next_x
-                self.player_y = next_y
-            else: # 撞牆，嘗試滑動
-                 map_x_only = int((self.player_x + move_x) / CELL_SIZE)
-                 map_y_only = int(self.player_y / CELL_SIZE)
-                 if 0 <= map_x_only < MAP_WIDTH and 0 <= map_y_only < MAP_HEIGHT and (world_map[map_y_only][map_x_only] == 0 or world_map[map_y_only][map_x_only] == 3):
-                     self.player_x += move_x
-                 map_x_only = int(self.player_x / CELL_SIZE)
-                 map_y_only = int((self.player_y + move_y) / CELL_SIZE)
-                 if 0 <= map_x_only < MAP_WIDTH and 0 <= map_y_only < MAP_HEIGHT and (world_map[map_y_only][map_x_only] == 0 or world_map[map_y_only][map_x_only] == 3):
-                     self.player_y += move_y
-
-        # 檢查與長門櫻的距離和互動
-        dist_to_nagato = math.sqrt((self.player_x - NAGATO_X)**2 + (self.player_y - NAGATO_Y)**2)
-        if dist_to_nagato < NAGATO_INTERACTION_DISTANCE:
-            if not self.nagato_found:
-                self.nagato_found = True
-                self.current_dialogue = "主人，您找到長門櫻了！長門櫻等您好久了～ 🌸"
-                self.dialogue_timer.start(5000)
-            if self.key_interact and not self.show_victory:
-                self.show_victory = True
-                self.current_dialogue = "主人～謝謝您來找長門櫻，我們一起回家吧！ ❤️"
-
-        # 更新櫻花飄落動畫
-        for petal in self.falling_petals:
-            petal['y'] += petal['speed'] * delta_time * 30
-            petal['wobble'] += petal['wobble_speed']
-            petal['x'] += math.sin(petal['wobble']) * 0.5
-            if petal['y'] > SCREEN_HEIGHT:
-                petal['y'] = 0
-                petal['x'] = random.uniform(0, SCREEN_WIDTH)
-
-        # 更新長門櫻圖示動畫
-        self.nagato_animation_offset = math.sin(current_time * 2) * 5
-        self.cherry_blossom_animation += delta_time * 2
-
-        # 滑鼠控制：重置滑鼠到中心
-        if self.mouse_active:
-            current_pos = QCursor.pos()
-            if current_pos != self.screen_center:
-                QCursor.setPos(self.screen_center)
-        self.update() 
-
-    def paintEvent(self, event):
-        """繪製畫面"""
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.setPen(Qt.PenStyle.NoPen)
-        if self.show_victory:
-            self.draw_victory_screen(painter)
-            painter.end()
-            return
-
-        # 繪製天空和地板
-        sky_color = QColor(135, 206, 250)
-        floor_color = QColor(100, 100, 100)
-        painter.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT // 2, sky_color)
-        painter.fillRect(0, SCREEN_HEIGHT // 2, SCREEN_WIDTH, SCREEN_HEIGHT // 2, floor_color)
-        z_buffer = [float('inf')] * SCREEN_WIDTH 
-
-        # Raycasting
-        for x in range(SCREEN_WIDTH):
-            camera_x = 2 * x / SCREEN_WIDTH - 1
-            try: # 處理FOV計算的邊界情況
-                if abs(math.cos(self.fov / 2)) < 1e-9: fov_factor = float('inf')
-                else: fov_factor = 1.0 / math.tan(self.fov / 2)
-                ray_angle = self.player_angle + math.atan2(camera_x, fov_factor)
-            except ValueError: ray_angle = self.player_angle
-            ray_angle %= (2 * math.pi)
-            ray_dir_x = math.cos(ray_angle)
-            ray_dir_y = math.sin(ray_angle)
-            map_x = int(self.player_x / CELL_SIZE)
-            map_y = int(self.player_y / CELL_SIZE)
-            delta_dist_x = abs(1 / ray_dir_x) if ray_dir_x != 0 else float('inf')
-            delta_dist_y = abs(1 / ray_dir_y) if ray_dir_y != 0 else float('inf')
-            if ray_dir_x < 0:
-                step_x = -1
-                side_dist_x = (self.player_x - map_x * CELL_SIZE) / CELL_SIZE * delta_dist_x
-            else:
-                step_x = 1
-                side_dist_x = ((map_x + 1) * CELL_SIZE - self.player_x) / CELL_SIZE * delta_dist_x
-            if ray_dir_y < 0:
-                step_y = -1
-                side_dist_y = (self.player_y - map_y * CELL_SIZE) / CELL_SIZE * delta_dist_y
-            else:
-                step_y = 1
-                side_dist_y = ((map_y + 1) * CELL_SIZE - self.player_y) / CELL_SIZE * delta_dist_y
-            hit = 0
-            side = 0
-            while hit == 0:
-                if side_dist_x < side_dist_y:
-                    side_dist_x += delta_dist_x
-                    map_x += step_x
-                    side = 0
-                else:
-                    side_dist_y += delta_dist_y
-                    map_y += step_y
-                    side = 1
-                if 0 <= map_x < MAP_WIDTH and 0 <= map_y < MAP_HEIGHT:
-                    if world_map[map_y][map_x] > 0 and world_map[map_y][map_x] < 3:
-                        hit = world_map[map_y][map_x]
-                else:
-                    hit = 1; break 
-
-            # 修正魚眼
-            if side == 0: perp_wall_dist = (map_x * CELL_SIZE - self.player_x + (1 - step_x) * CELL_SIZE / 2) / ray_dir_x if ray_dir_x != 0 else float('inf')
-            else: perp_wall_dist = (map_y * CELL_SIZE - self.player_y + (1 - step_y) * CELL_SIZE / 2) / ray_dir_y if ray_dir_y != 0 else float('inf')
-            if perp_wall_dist <= 1e-5: perp_wall_dist = 1e-5
-            z_buffer[x] = perp_wall_dist 
-
-            # 計算牆高和繪製範圍
-            line_height = int(SCREEN_HEIGHT / (perp_wall_dist / CELL_SIZE)) if perp_wall_dist > 0 else SCREEN_HEIGHT
-            draw_start = max(0, -line_height // 2 + SCREEN_HEIGHT // 2)
-            draw_end = min(SCREEN_HEIGHT - 1, line_height // 2 + SCREEN_HEIGHT // 2)
-
-            # 選擇牆色並根據側面變暗
-            wall_color = self.wall_colors.get(hit, QColor(128, 128, 128))
-            if side == 1: wall_color = wall_color.darker(int(100 / self.dark_factor))
-
-            # 繪製牆壁條帶
-            wall_height = draw_end - draw_start + 1
-            if wall_height > 0:
-                painter.fillRect(x, draw_start, 1, wall_height, wall_color)
-
-        # 繪製長門櫻圖示
-        self.draw_nagato_sprite(painter, z_buffer)
-
-        # 繪製櫻花飄落效果 (開啟抗鋸齒)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QColor(255, 192, 203, 150))
-        painter.setBrush(QColor(255, 192, 203, 150))
-        for petal in self.falling_petals:
-            petal_size = petal['size']
-            petal_x = petal['x']
-            petal_y = petal['y'] + self.nagato_animation_offset * 0.3
-            points = []
-            for i in range(5):
-                angle = 2 * math.pi * i / 5 + self.cherry_blossom_animation
-                px = petal_x + math.cos(angle) * petal_size
-                py = petal_y + math.sin(angle) * petal_size
-                points.append(QPoint(int(px), int(py)))
-            painter.drawPolygon(QPolygon(points))
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-
-        # 繪製對話框和說明 (開啟抗鋸齒繪製文字)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        if self.nagato_found and self.current_dialogue:
-            painter.fillRect(50, SCREEN_HEIGHT - 100, SCREEN_WIDTH - 100, 80, QColor(0, 0, 0, 200))
-            painter.setPen(QColor(255, 255, 255))
-            painter.setFont(QFont("微軟正黑體", 12))
-            painter.drawText(60, SCREEN_HEIGHT - 80, SCREEN_WIDTH - 120, 60, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.current_dialogue)
-        if self.show_instructions:
-            painter.setPen(QColor(255, 255, 255, 200))
-            painter.setFont(QFont("微軟正黑體", 12))
-            painter.fillRect(10, 10, 400, 150, QColor(0, 0, 0, 150))
-            painter.drawText(20, 40, "使用 W/S 前後移動, A/D 左右移動")
-            painter.drawText(20, 70, "滑鼠可控制視角旋轉")
-            painter.drawText(20, 100, "按下 E 鍵與長門櫻互動")
-            painter.drawText(20, 130, "找到長門櫻，她在等著您！ 🌸")
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False) # 恢復
-
-        # 繪製十字準星
-        if self.mouse_active:
-            painter.setPen(QColor(255, 255, 255, 120))
-            painter.drawLine(SCREEN_WIDTH//2-10, SCREEN_HEIGHT//2, SCREEN_WIDTH//2+10, SCREEN_HEIGHT//2)
-            painter.drawLine(SCREEN_WIDTH//2, SCREEN_HEIGHT//2-10, SCREEN_WIDTH//2, SCREEN_HEIGHT//2+10)
-
-        painter.end()
-
-    def draw_nagato_sprite(self, painter, z_buffer):
-        """繪製長門櫻圖示"""
-        if not self.nagato_icon: return
-        sprite_dir_x = NAGATO_X - self.player_x
-        sprite_dir_y = NAGATO_Y - self.player_y
-        sprite_distance = math.sqrt(sprite_dir_x**2 + sprite_dir_y**2)
-        if sprite_distance < 1: return
-
-        # 計算螢幕大小
-        sprite_base_scale = 1.0
-        sprite_size = int(SCREEN_HEIGHT / (sprite_distance / CELL_SIZE) * (NAGATO_SIZE / CELL_SIZE) * sprite_base_scale)
-        if sprite_size <= 5: return
-
-        # 計算相對角度
-        sprite_angle = math.atan2(sprite_dir_y, sprite_dir_x)
-        relative_angle = sprite_angle - self.player_angle
-        while relative_angle > math.pi: relative_angle -= 2 * math.pi
-        while relative_angle < -math.pi: relative_angle += 2 * math.pi
-
-        # 視野檢查
-        sprite_angular_width_approx = math.atan((NAGATO_SIZE / 2) / sprite_distance) if sprite_distance > 0 else math.pi
-        if abs(relative_angle) > self.fov / 2 + sprite_angular_width_approx: return
-
-        # 計算螢幕X座標
-        sprite_screen_x = int((0.5 + relative_angle / self.fov) * SCREEN_WIDTH)
-
-        # 計算繪製參數
-        draw_width = sprite_size
-        draw_height = sprite_size
-        draw_x = sprite_screen_x - draw_width // 2
-        vertical_offset_factor = 0.1
-        draw_y = int(SCREEN_HEIGHT / 2 + sprite_size * vertical_offset_factor - draw_height + self.nagato_animation_offset)
-
-        # Z-buffer 檢查 (逐列)
-        sprite_start_x = max(0, draw_x)
-        sprite_end_x = min(SCREEN_WIDTH - 1, draw_x + draw_width)
-        is_visible = False
-        for check_x in range(sprite_start_x, sprite_end_x + 1):
-            if sprite_distance <= z_buffer[check_x]:
-                is_visible = True
-                break 
-
-        if is_visible:
-            target_rect = QRect(draw_x, draw_y, draw_width, draw_height)
-            painter.drawPixmap(target_rect, self.nagato_icon)
-
-            # 繪製互動提示 (開啟抗鋸齒)
-            tip_y = draw_y - 30
-            if sprite_size > 30 and not self.show_victory and 0 <= tip_y < SCREEN_HEIGHT:
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-                painter.setPen(QColor(255, 255, 255))
-                painter.setFont(QFont("微軟正黑體", 10))
-                text = "按 E 互動" if self.nagato_found else "長門櫻 🌸"
-                painter.drawText(sprite_screen_x - 40, int(tip_y), 80, 20,
-                                Qt.AlignmentFlag.AlignCenter, text)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-
-    def draw_victory_screen(self, painter):
-        """繪製勝利畫面"""
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        painter.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, QColor(0, 0, 0))
-        painter.setPen(QColor(255, 182, 193))
-        painter.setFont(QFont("微軟正黑體", 24, QFont.Weight.Bold))
-        painter.drawText(0, 100, SCREEN_WIDTH, 50, Qt.AlignmentFlag.AlignCenter, "主人找到長門櫻了！")
-        painter.setPen(QColor(255, 255, 255))
-        painter.setFont(QFont("微軟正黑體", 14))
-        painter.drawText(50, 200, SCREEN_WIDTH - 100, 100, Qt.AlignmentFlag.AlignCenter,
-                        "長門櫻非常開心主人找到她！\n以後，長門櫻會一直陪伴在主人身旁！")
-
-        # 繪製長門櫻圖示
-        if self.nagato_icon:
-            icon_size = 150
-            icon_x = SCREEN_WIDTH // 2 - icon_size // 2
-            icon_y = SCREEN_HEIGHT // 2 + 50 - icon_size // 2
-            victory_animation_offset = math.sin(time.time() * 2) * 10
-            icon_y += int(victory_animation_offset)
-            painter.drawPixmap(icon_x, icon_y, icon_size, icon_size, self.nagato_icon)
-
-        # 提示文字
-        painter.setPen(QColor(200, 200, 200))
-        painter.setFont(QFont("微軟正黑體", 12))
-        if self.victory_time > 1.0:
-            painter.drawText(0, SCREEN_HEIGHT - 50, SCREEN_WIDTH, 30, Qt.AlignmentFlag.AlignCenter, "按下 ESC 鍵返回")
-
-        # 繪製飄落櫻花
-        painter.setPen(QColor(255, 182, 193, 150))
-        painter.setBrush(QColor(255, 182, 193, 150))
-        for petal in self.falling_petals:
-            petal_size = petal['size'] * 1.5
-            petal_x = petal['x']
-            petal_y = petal['y']
-            points = []
-            for i in range(5):
-                angle = 2 * math.pi * i / 5 + self.cherry_blossom_animation
-                px = petal_x + math.cos(angle) * petal_size
-                py = petal_y + math.sin(angle) * petal_size
-                points.append(QPoint(int(px), int(py)))
-            painter.drawPolygon(QPolygon(points))
-
-        # 恢復渲染設定
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
-
-    def mousePressEvent(self, event):
-        """處理滑鼠按下，啟用視角控制"""
-        if self.show_victory: return
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.mouse_active = True
-            self.screen_center = self.mapToGlobal(self.mouse_center) 
-            QCursor.setPos(self.screen_center)
-            self.setCursor(Qt.CursorShape.BlankCursor)
-        elif event.button() == Qt.MouseButton.RightButton: 
-            self.mouse_active = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-
-    def mouseReleaseEvent(self, event):
-        pass 
-
-    def mouseMoveEvent(self, event):
-        """處理滑鼠移動，旋轉視角"""
-        if self.show_victory or not self.mouse_active: return
-        mouse_pos = event.pos()
-        dx = mouse_pos.x() - self.mouse_center.x()
-        if dx != 0:
-            self.player_angle = (self.player_angle + dx * MOUSE_SENSITIVITY) % (2 * math.pi)
-
-    def keyPressEvent(self, event: QKeyEvent):
-        """處理按鍵按下"""
-        if self.show_victory:
-            if event.key() == Qt.Key.Key_Escape:
-                parent_dialog = self.parent()
-                if isinstance(parent_dialog, QDialog): parent_dialog.close()
-                else: self.close()
-            return
-
-        key = event.key()
-        if key == Qt.Key.Key_W: self.key_forward = True
-        elif key == Qt.Key.Key_S: self.key_backward = True
-        elif key == Qt.Key.Key_A: self.key_left = True
-        elif key == Qt.Key.Key_D: self.key_right = True
-        elif key == Qt.Key.Key_E: self.key_interact = True
-        elif key == Qt.Key.Key_Escape:
-            if self.mouse_active:
-                self.mouse_active = False
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-            else:
-                parent_dialog = self.parent()
-                if isinstance(parent_dialog, QDialog): parent_dialog.close()
-                else: self.close()
-        else: super().keyPressEvent(event)
-
-    def keyReleaseEvent(self, event: QKeyEvent):
-        """處理按鍵釋放"""
-        key = event.key()
-        if key == Qt.Key.Key_W: self.key_forward = False
-        elif key == Qt.Key.Key_S: self.key_backward = False
-        elif key == Qt.Key.Key_A: self.key_left = False
-        elif key == Qt.Key.Key_D: self.key_right = False
-        elif key == Qt.Key.Key_E: self.key_interact = False
-        else: super().keyReleaseEvent(event)
-
-    def leaveEvent(self, event):
-        """滑鼠離開窗口時取消控制"""
-        if self.mouse_active:
-            self.mouse_active = False
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-        super().leaveEvent(event)
-
-# --- 主對話框類別 ---
-class NagatoSakuraEasterEggDialog(QDialog):
-    """長門櫻 Raycasting 彩蛋對話框"""
-    def __init__(self, parent=None):
-        super().__init__(parent, Qt.WindowType.Dialog)
-        self.setWindowTitle("長門櫻的秘密基地")
+        self.setWindowTitle("長門櫻 彈跳球")
         self.setModal(True)
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.raycasting_widget = RaycastingWidget(self)
-        self.main_layout.addWidget(self.raycasting_widget)
-        self.setFixedSize(SCREEN_WIDTH, SCREEN_HEIGHT)
-        self.setStyleSheet("background-color: #000000;")
-
+        self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
+        try:
+            current_directory = Path(__file__).resolve().parent.parent.parent
+            icon_path = current_directory / "assets" / "icon" / "1.3.0.ico"
+            if icon_path.exists():
+                self.setWindowIcon(QIcon(str(icon_path)))
+            else:
+                icon_dir = current_directory / "assets" / "icon"
+                if icon_dir.exists():
+                    icon_files = list(icon_dir.glob("*.ico"))
+                    if icon_files:
+                        latest_icon = sorted(icon_files)[-1]
+                        self.setWindowIcon(QIcon(str(latest_icon)))
+                        logging.info(f"彩蛋對話框使用圖示: {latest_icon.name}")
+        except Exception as e:
+            logging.warning(f"無法載入對話框圖示: {e}")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.game = NagatoSakuraBounceGame()
+        layout.addWidget(self.game)
+        self.setLayout(layout)
+        logging.info("彩蛋遊戲已啟動")
+    
     def closeEvent(self, event):
-        """關閉窗口時停止計時器並恢復游標"""
-        if hasattr(self, 'raycasting_widget'):
-            if self.raycasting_widget.timer: self.raycasting_widget.timer.stop()
-            self.raycasting_widget.setCursor(Qt.CursorShape.ArrowCursor)
+        """處理對話框關閉事件"""
+        try:
+            logging.info("正在關閉彩蛋遊戲對話框...")
+            if hasattr(self, 'game') and self.game:
+                self.game.force_stop_music()
+                if hasattr(self.game, 'game_timer'):
+                    self.game.game_timer.stop()
+                logging.info("遊戲資源已清理")
+            logging.info("彩蛋遊戲對話框已關閉")
+        except Exception as e:
+            logging.error(f"關閉彩蛋對話框時發生錯誤: {e}")
         super().closeEvent(event)
 
-# --- 快速測試 ---
+
+def show_easter_egg():
+    """顯示彩蛋遊戲"""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+    dialog = EasterEggDialog()
+    dialog.exec()
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    dialog = NagatoSakuraEasterEggDialog()
-    dialog.show()
-    sys.exit(app.exec())
+    show_easter_egg()

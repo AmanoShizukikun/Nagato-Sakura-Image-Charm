@@ -1,3 +1,26 @@
+### 1.3.0 (2025 年 8 月 10 日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.3.0.jpg)
+### 重要變更
+- 【重大】訓練頁面處理功能添加新的 data_processer 及影片擷取圖片的功能。
+- 【重大】訓練頁面訓練模型的內核版本從 v4 升級至 v7+ 版本。
+- 【重大】移除預裝的 Nagato-Sakura-Image-Quality-Assessment 及 Nagato-Sakura-Image-Classification。
+- 【重大】專案報告從 assets/docs 移動至 assets/report。
+### 新增功能
+- 【新增】圖片處理、影片處理新增銳化功能。
+- 【新增】擴充插件管理器並添加了擴充功能頁面，可在應用程式內安裝、更新及卸載擴充功能。
+- 【新增】日誌記錄監視器可在應用程式內監看動作紀錄。
+- 【新增】檢查更新功能可以檢查應用程式是否有可用新版本。
+- 【更新】訓練頁面的資料處理功能。
+- 【更新】訓練頁面的訓練器內核版本。
+- 【更新】主程式的 CLI 介面添加添加日誌等級顏色方便查看日誌。
+- 【更新】彩蛋變更，並添加擴充功能的可安裝擴展包。
+- 【更新】下載頁面改善了縮放比例及縮放上限的問題。
+- 【修復】MacOS、Linux 下載頁面文字重疊在預覽框上面。 
+- 【修復】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較的問題。
+- 【修復】分割畫面向左拉線條抖動問題。
+### 已知問題
+- 【錯誤】Linux、MacOS 同時存在兩張圖片執行完整圖片評估功能時會直接閃退的問題。
+
 ### 1.2.1 (2025 年 7 月 15 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.1.jpg)
 ### 重要變更
@@ -14,8 +37,7 @@
 - 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
 - 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本後將強制預裝 Nagato-Sakura-Image-Quality-Assessment 影像評分功能 (約1MB)。
 - 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本後將強制預裝 Nagato-Sakura-Image-Classification (NS-C)模型推薦功能 (約16MB)。
-- 【錯誤】MacOS 同時存在兩張圖片執行完整圖片評估功能時會直接閃退的問題。
-- 【錯誤】Linux 同時存在兩張圖片執行完整圖片評估功能時會缺乏字體直接閃退的問題。
+- 【錯誤】Linux、MacOS 同時存在兩張圖片執行完整圖片評估功能時會直接閃退的問題。
 - 【錯誤】MacOS、Linux 下載頁面文字重疊在預覽框上面。 
 
 ### 1.2.0 (2025 年 5 月 20 日)

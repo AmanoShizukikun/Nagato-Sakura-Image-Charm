@@ -1,13 +1,14 @@
 import os
 import re
+import platform
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
                            QFileDialog, QProgressBar, QMessageBox, QComboBox, QTabWidget,
                            QSpinBox, QCheckBox, QWidget, QGroupBox, QGridLayout, QSlider,
                            QTextEdit, QListWidget, QStackedWidget, QRadioButton, QButtonGroup,
-                           QGraphicsDropShadowEffect)
+                           QGraphicsDropShadowEffect, QApplication, QScrollArea)
 from PyQt6.QtCore import (Qt, QTimer, QPropertyAnimation, QEasingCurve,
-                        QParallelAnimationGroup, QPoint, QAbstractAnimation ) 
-from PyQt6.QtGui import QPixmap, QCursor, QColor
+                        QParallelAnimationGroup, QPoint, QAbstractAnimation, QSize) 
+from PyQt6.QtGui import QPixmap, QCursor, QColor, QScreen
 
 
 class DownloadModelDialog(QDialog):
@@ -15,8 +16,6 @@ class DownloadModelDialog(QDialog):
     def __init__(self, model_manager, parent=None):
         super().__init__(parent)
         self.setWindowTitle("下載模型")
-        self.setMinimumWidth(720)
-        self.setMinimumHeight(600)
         self.model_manager = model_manager
         self.init_model_data()
         self.current_model_index = 0
@@ -27,7 +26,54 @@ class DownloadModelDialog(QDialog):
         self._current_right_preview_label = None
         self.center_shadow_effect = None 
         self.swipe_start_pos = None
+        self._setup_window_size()
         self.setup_ui()
+
+    def _setup_window_size(self):
+        """設置視窗大小，適配不同平台和DPI"""
+        screen = QApplication.primaryScreen()
+        screen_geometry = screen.availableGeometry()
+        screen_dpi = screen.logicalDotsPerInch()
+        base_dpi = 96.0
+        dpi_scale = screen_dpi / base_dpi
+        base_width = 600
+        base_height = 800
+        system = platform.system()
+        if system == "Windows":
+            logical_width = base_width
+            logical_height = base_height
+            min_width = int(base_width)
+            min_height = int(base_height * 0.83)
+        elif system == "Darwin":  # macOS
+            logical_width = int(base_width)
+            logical_height = int(base_height * 1.08)
+            min_width = base_width
+            min_height = base_height
+        else:  # Linux 和其他系統
+            logical_width = int(base_width)
+            logical_height = int(base_height * 1.08)
+            min_width = base_width
+            min_height = base_height
+        max_width = int(screen_geometry.width() * 0.9)
+        max_height = int(screen_geometry.height() * 0.9)
+        logical_width = min(logical_width, max_width)
+        logical_height = min(logical_height, max_height)
+        min_width = min(min_width, max_width)
+        min_height = min(min_height, max_height)
+        self.resize(logical_width, logical_height)
+        self.setMinimumSize(min_width, min_height)
+        self.setMaximumSize(max_width, max_height)
+        self.setSizeGripEnabled(True)
+        self._center_window(screen_geometry)
+
+    def _center_window(self, screen_geometry):
+        """將視窗居中顯示"""
+        window_geometry = self.geometry()
+        center_x = screen_geometry.center().x() - window_geometry.width() // 2
+        center_y = screen_geometry.center().y() - window_geometry.height() // 2
+        center_x = max(screen_geometry.left(), min(center_x, screen_geometry.right() - window_geometry.width()))
+        center_y = max(screen_geometry.top(), min(center_y, screen_geometry.bottom() - window_geometry.height()))
+        self.move(center_x, center_y)
 
     def init_model_data(self):
         """初始化官方模型數據"""
@@ -39,6 +85,8 @@ class DownloadModelDialog(QDialog):
     def setup_ui(self):
         """設置主要UI佈局"""
         main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(8)
         self.setLayout(main_layout)
         version_layout = QHBoxLayout()
         self.version_label = QLabel(f"模型庫版本: {self.version} (更新日期: {self.last_updated})")
@@ -58,17 +106,26 @@ class DownloadModelDialog(QDialog):
         self.update_button.clicked.connect(self.update_models_data)
         version_layout.addWidget(self.update_button)
         main_layout.addLayout(version_layout)
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setContentsMargins(5, 5, 5, 5)
         self.tabs = QTabWidget()
         self.official_tab = QWidget()
         self.custom_tab = QWidget()
         self.tabs.addTab(self.official_tab, "官方模型")
         self.tabs.addTab(self.custom_tab, "自訂URL")
         self.tabs.currentChanged.connect(self.on_tab_changed)
-        main_layout.addWidget(self.tabs)
+        scroll_layout.addWidget(self.tabs)
         self.setup_official_tab()
         self.setup_custom_tab()
-        self.setup_progress_section(main_layout)
-        self.setup_options_section(main_layout)
+        self.setup_progress_section(scroll_layout)
+        self.setup_options_section(scroll_layout)
+        scroll_area.setWidget(scroll_widget)
+        main_layout.addWidget(scroll_area, 1)
         self.setup_buttons(main_layout)
         self.model_manager.update_available_signal.connect(self.on_update_available)
         self.model_manager.update_progress_signal.connect(self.on_update_progress)
@@ -194,71 +251,7 @@ class DownloadModelDialog(QDialog):
         self.center_shadow_effect.setColor(QColor(0, 0, 0, 100)) 
         self.center_shadow_effect.setOffset(3, 3) 
         self.preview_area_widget = QWidget()
-        self.preview_area_widget.setMinimumHeight(260)
-        preview_area_layout = QHBoxLayout(self.preview_area_widget)
-        preview_area_layout.setContentsMargins(0, 0, 0, 0)
-        preview_area_layout.setSpacing(5)
-        preview_area_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        # --- 左預覽圖容器 ---
-        self.left_preview_container = QWidget(self.preview_area_widget)
-        self.left_preview_container.setFixedSize(180, 240)
-        self.left_preview_container.setStyleSheet("background-color: transparent; border: none;")
-        self.left_preview_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.left_preview_container.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        self.left_preview_container.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.left_preview_container.mousePressEvent = lambda e: self.show_prev_model() 
-        self._current_left_preview_label = QLabel(self.left_preview_container)
-        self._current_left_preview_label.setGeometry(0, 0, 180, 240)
-        self._current_left_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._current_left_preview_label.setStyleSheet("""
-            border: 1px solid lightgray;
-            background-color: #f8f8f8;
-            border-radius: 3px;
-            padding: 0px;
-        """)
-        preview_area_layout.addWidget(self.left_preview_container)
-
-        # --- 中預覽圖容器 ---
-        self.preview_container_widget = QWidget(self.preview_area_widget)
-        self.preview_container_widget.setFixedSize(192, 256)
-        self.preview_container_widget.setStyleSheet("background-color: transparent; border: none;")
-        self.preview_container_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.preview_container_widget.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        self.preview_container_widget.mousePressEvent = self._handle_mouse_press
-        self.preview_container_widget.mouseMoveEvent = self._handle_mouse_move
-        self.preview_container_widget.mouseReleaseEvent = self._handle_mouse_release
-        self.preview_container_widget.setCursor(QCursor(Qt.CursorShape.OpenHandCursor)) 
-        self.model_preview_label = QLabel(self.preview_container_widget)
-        self.model_preview_label.setGeometry(0, 0, 192, 256)
-        self.model_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.model_preview_label.setStyleSheet("""
-            border: 3px solid #3498db;
-            background-color: white;
-            border-radius: 3px;
-            padding: 0px;
-        """)
-        self.model_preview_label.setGraphicsEffect(self.center_shadow_effect)
-        preview_area_layout.addWidget(self.preview_container_widget)
-
-        # --- 右預覽圖容器 ---
-        self.right_preview_container = QWidget(self.preview_area_widget)
-        self.right_preview_container.setFixedSize(180, 240)
-        self.right_preview_container.setStyleSheet("background-color: transparent; border: none;")
-        self.right_preview_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.right_preview_container.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
-        self.right_preview_container.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.right_preview_container.mousePressEvent = lambda e: self.show_next_model() 
-        self._current_right_preview_label = QLabel(self.right_preview_container)
-        self._current_right_preview_label.setGeometry(0, 0, 180, 240)
-        self._current_right_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._current_right_preview_label.setStyleSheet("""
-            border: 1px solid lightgray;
-            background-color: #f8f8f8;
-            border-radius: 3px;
-            padding: 0px;
-        """)
-        preview_area_layout.addWidget(self.right_preview_container)
+        self._setup_preview_containers()
         preview_layout.addWidget(self.preview_area_widget)
         nav_info_layout = QHBoxLayout()
         self.prev_button = QPushButton("< 上一個")
@@ -294,6 +287,119 @@ class DownloadModelDialog(QDialog):
         preview_layout.addLayout(model_meta_layout)
         gallery_layout.addWidget(preview_group)
         self.model_view_stack.addWidget(self.gallery_view)
+
+    def _setup_preview_containers(self):
+        """設置預覽圖容器，支援動態尺寸"""
+        base_left_width, base_left_height = 140, 186
+        base_center_width, base_center_height = 160, 213
+        base_right_width, base_right_height = 140, 186
+        available_width = max(600, self.width() - 100)
+        scale_factor = min(2.0, available_width / 600)
+        left_width = int(base_left_width * scale_factor)
+        left_height = int(base_left_height * scale_factor)
+        center_width = int(base_center_width * scale_factor)
+        center_height = int(base_center_height * scale_factor)
+        right_width = int(base_right_width * scale_factor)
+        right_height = int(base_right_height * scale_factor)
+        min_height = max(center_height, 200)
+        self.preview_area_widget.setMinimumHeight(min_height + 20)
+        preview_area_layout = QHBoxLayout(self.preview_area_widget)
+        preview_area_layout.setContentsMargins(10, 10, 10, 10)
+        preview_area_layout.setSpacing(8)
+        preview_area_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # --- 左預覽圖容器 ---
+        self.left_preview_container = QWidget(self.preview_area_widget)
+        self.left_preview_container.setFixedSize(left_width, left_height)
+        self.left_preview_container.setStyleSheet("background-color: transparent; border: none;")
+        self.left_preview_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.left_preview_container.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.left_preview_container.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.left_preview_container.mousePressEvent = lambda e: self.show_prev_model() 
+        self._current_left_preview_label = QLabel(self.left_preview_container)
+        self._current_left_preview_label.setGeometry(0, 0, left_width, left_height)
+        self._current_left_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._current_left_preview_label.setStyleSheet("""
+            border: 1px solid lightgray;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+            padding: 2px;
+        """)
+        preview_area_layout.addWidget(self.left_preview_container)
+
+        # --- 中預覽圖容器 ---
+        self.preview_container_widget = QWidget(self.preview_area_widget)
+        self.preview_container_widget.setFixedSize(center_width, center_height)
+        self.preview_container_widget.setStyleSheet("background-color: transparent; border: none;")
+        self.preview_container_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.preview_container_widget.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.preview_container_widget.mousePressEvent = self._handle_mouse_press
+        self.preview_container_widget.mouseMoveEvent = self._handle_mouse_move
+        self.preview_container_widget.mouseReleaseEvent = self._handle_mouse_release
+        self.preview_container_widget.setCursor(QCursor(Qt.CursorShape.OpenHandCursor)) 
+        self.model_preview_label = QLabel(self.preview_container_widget)
+        self.model_preview_label.setGeometry(0, 0, center_width, center_height)
+        self.model_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.model_preview_label.setStyleSheet("""
+            border: 3px solid #3498db;
+            background-color: white;
+            border-radius: 4px;
+            padding: 2px;
+        """)
+        self.model_preview_label.setGraphicsEffect(self.center_shadow_effect)
+        preview_area_layout.addWidget(self.preview_container_widget)
+
+        # --- 右預覽圖容器 ---
+        self.right_preview_container = QWidget(self.preview_area_widget)
+        self.right_preview_container.setFixedSize(right_width, right_height)
+        self.right_preview_container.setStyleSheet("background-color: transparent; border: none;")
+        self.right_preview_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.right_preview_container.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.right_preview_container.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.right_preview_container.mousePressEvent = lambda e: self.show_next_model() 
+        self._current_right_preview_label = QLabel(self.right_preview_container)
+        self._current_right_preview_label.setGeometry(0, 0, right_width, right_height)
+        self._current_right_preview_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._current_right_preview_label.setStyleSheet("""
+            border: 1px solid lightgray;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+            padding: 2px;
+        """)
+        preview_area_layout.addWidget(self.right_preview_container)
+
+    def resizeEvent(self, event):
+        """處理視窗大小變化事件"""
+        super().resizeEvent(event)
+        if hasattr(self, 'preview_area_widget') and self.preview_area_widget is not None:
+            QTimer.singleShot(50, self._update_preview_containers_size)
+    
+    def _update_preview_containers_size(self):
+        """更新預覽容器的尺寸"""
+        if not hasattr(self, 'left_preview_container'):
+            return
+        base_left_width, base_left_height = 140, 186
+        base_center_width, base_center_height = 160, 213
+        base_right_width, base_right_height = 140, 186
+        available_width = max(600, self.width() - 100)
+        scale_factor = min(2.0, available_width / 600)
+        left_width = int(base_left_width * scale_factor)
+        left_height = int(base_left_height * scale_factor)
+        center_width = int(base_center_width * scale_factor)
+        center_height = int(base_center_height * scale_factor)
+        right_width = int(base_right_width * scale_factor)
+        right_height = int(base_right_height * scale_factor)
+        self.left_preview_container.setFixedSize(left_width, left_height)
+        self.preview_container_widget.setFixedSize(center_width, center_height)
+        self.right_preview_container.setFixedSize(right_width, right_height)
+        if self._current_left_preview_label:
+            self._current_left_preview_label.setGeometry(0, 0, left_width, left_height)
+        if self.model_preview_label:
+            self.model_preview_label.setGeometry(0, 0, center_width, center_height)
+        if self._current_right_preview_label:
+            self._current_right_preview_label.setGeometry(0, 0, right_width, right_height)
+        if hasattr(self, 'current_model_index') and self.current_model_index >= 0:
+            self.update_model_preview(self.current_model_index, slide_direction=None)
 
     def setup_list_view(self):
         """設置列表瀏覽視圖"""

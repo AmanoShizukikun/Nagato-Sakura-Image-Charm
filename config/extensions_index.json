@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2025-08-10",
+  "extensions": [
+    {
+      "name": "Nagato-Sakura-Image-Classification (推薦)",
+      "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Classification",
+      "description": "「長門櫻-圖像分類」 - 採用先進的 EfficientNet-B0 深度學習架構，能自動識別圖像內容類型，並推薦最適合的增強模型，讓您的每一張圖片都能獲得最佳的處理結果。",
+      "author": "天野靜樹",
+      "added_date": "2025-08-10",
+      "tags": ["圖像分類","模型推薦"]
+    },
+    {
+      "name": "Nagato-Sakura-Image-Quality-Assessment (推薦)",
+      "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Assessment",
+      "description": "「長門櫻-圖像品質評分」 - 基於輕量化深度可分離卷積 CNN 模型設計，提供快速的圖像品質評估服務幫助用戶快速且客觀地評估圖像質量。",
+      "author": "天野靜樹",
+      "added_date": "2025-08-10",
+      "tags": ["圖像評分","品質評估"]
+    },
+    {
+      "name": "Nagato-Sakura-Bounce-py",
+      "url": "https://github.com/AmanoShizukikun/Nagato-Sakura-Bounce-py",
+      "description": "「長門櫻-彈跳球」 - 完整版資源包，經典的彈跳球玩法結合彈幕射擊遊戲，融合現代遊戲設計理念。具有流暢的操作手感、精美的視覺效果和動態音效。",
+      "author": "天野靜樹",
+      "added_date": "2025-08-10",
+      "tags": ["彩蛋遊戲","彩蛋資源"]
+    }
+  ]
+}

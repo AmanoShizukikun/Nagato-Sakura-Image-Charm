@@ -2,11 +2,14 @@ import sys
 import os
 import time
 import logging
+import requests
+import json
+from packaging import version
 from pathlib import Path
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QTabWidget, QStatusBar,
                             QMenu, QMenuBar, QDialog, QMessageBox, QFileDialog, QInputDialog, QLabel, QApplication)
 from PyQt6.QtGui import QAction, QIcon, QPixmap
-from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal, QThread
 from PyQt6.QtGui import QDesktopServices
 
 from src.ui.image_tab import ImageProcessingTab
@@ -15,18 +18,63 @@ from src.utils.NS_ModelManager import ModelManager
 from src.ui.dialogs import DownloadModelDialog
 from src.ui.training_tab import TrainingTab
 from src.ui.assessment_tab import AssessmentTab
-from src.ui.easter_egg import NagatoSakuraEasterEggDialog 
+from src.ui.extensions_tab import ExtensionsTab
+from src.ui.easter_egg import EasterEggDialog 
 
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+class VersionCheckThread(QThread):
+    """版本檢查執行緒"""
+    version_checked = pyqtSignal(bool, str, str)
+    
+    def __init__(self, current_version):
+        super().__init__()
+        self.current_version = current_version
+        self.github_api_url = "https://api.github.com/repos/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/latest"
+    
+    def run(self):
+        """執行版本檢查"""
+        try:
+            headers = {
+                'User-Agent': 'Nagato-Sakura-Image-Charm-App',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(self.github_api_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            release_data = response.json()
+            latest_version = release_data.get('tag_name', '').lstrip('v')
+            if not latest_version:
+                self.version_checked.emit(False, "", "無法獲取最新版本資訊")
+                return
+            try:
+                current_ver = version.parse(self.current_version)
+                latest_ver = version.parse(latest_version)
+                if latest_ver > current_ver:
+                    self.version_checked.emit(True, latest_version, "")
+                else:
+                    self.version_checked.emit(False, latest_version, "")
+            except Exception as e:
+                logger.error(f"版本比較失敗: {str(e)}")
+                self.version_checked.emit(False, latest_version, f"版本比較失敗: {str(e)}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"網路請求失敗: {str(e)}")
+            self.version_checked.emit(False, "", f"網路連線失敗: {str(e)}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON 解析失敗: {str(e)}")
+            self.version_checked.emit(False, "", "回應格式錯誤")
+        except Exception as e:
+            logger.error(f"版本檢查失敗: {str(e)}")
+            self.version_checked.emit(False, "", f"檢查更新失敗: {str(e)}")
+
 # --- 主應用程式類別 ---
 class ImageEnhancerApp(QMainWindow):
-    version = "1.2.0"
+    version = "1.3.0"
     def __init__(self):
         super().__init__()
         self.about_clicks = 0 
+        self.version_check_thread = None
         current_directory = Path(__file__).resolve().parent.parent.parent
         self.setWindowTitle("Nagato-Sakura-Image-Charm")
         self.setWindowIcon(QIcon(str(current_directory / "assets" / "icon" / f"{self.version}.ico")))
@@ -44,7 +92,6 @@ class ImageEnhancerApp(QMainWindow):
 
     def check_models_after_ui_shown(self):
         """在UI顯示後檢查模型並註冊預設模型，但不立即載入"""
-
         if not self.model_manager.has_models():
             self.no_models_found()
         else:
@@ -171,6 +218,8 @@ class ImageEnhancerApp(QMainWindow):
         self.tab_widget.addTab(self.training_tab, "訓練模型")
         self.assessment_tab = AssessmentTab(self)
         self.tab_widget.addTab(self.assessment_tab, "圖像評估")
+        self.extensions_tab = ExtensionsTab()
+        self.tab_widget.addTab(self.extensions_tab, "擴充功能")
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
         self.pass_model_manager_to_tabs()
 
@@ -241,8 +290,6 @@ class ImageEnhancerApp(QMainWindow):
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-
-        # 模型選單
         self.model_menu = QMenu("模型", self)
         menu_bar.addMenu(self.model_menu)
         download_model_action = QAction(QIcon.fromTheme("system-software-update", QIcon(str(icon_dir / "download.png"))), "下載模型", self)
@@ -265,9 +312,20 @@ class ImageEnhancerApp(QMainWindow):
         delete_model_action.triggered.connect(self.delete_model)
         self.model_menu.addAction(delete_model_action)
         self.model_menu.addSeparator()
-
-        # 說明選單
+        tools_menu = menu_bar.addMenu("工具")
+        benchmark_action = QAction(QIcon.fromTheme("utilities-system-monitor", QIcon.fromTheme("system-run", QIcon.fromTheme("applications-system"))), "基準測試", self)
+        benchmark_action.triggered.connect(self.run_benchmark)
+        benchmark_action.setShortcut("Ctrl+B")
+        tools_menu.addAction(benchmark_action)
+        log_viewer_action = QAction(QIcon.fromTheme("text-x-generic", QIcon.fromTheme("document-properties", QIcon.fromTheme("preferences-system"))), "日誌紀錄", self)
+        log_viewer_action.triggered.connect(self.open_log_viewer)
+        log_viewer_action.setShortcut("Ctrl+L")
+        tools_menu.addAction(log_viewer_action)
         help_menu = menu_bar.addMenu("說明")
+        check_update_action = QAction(QIcon.fromTheme("system-software-update", QIcon(str(icon_dir / "update.png"))), "檢查更新", self)
+        check_update_action.setShortcut("Ctrl+U")
+        check_update_action.triggered.connect(self.check_for_updates)
+        help_menu.addAction(check_update_action)
         about_action = QAction(QIcon.fromTheme("help-about", QIcon(str(icon_dir / "about.png"))), "關於", self)
         about_action.setShortcut("Ctrl+A")
         about_action.triggered.connect(self.show_about)
@@ -276,10 +334,6 @@ class ImageEnhancerApp(QMainWindow):
         website_action.setShortcut("Ctrl+W")
         website_action.triggered.connect(self.open_website)
         help_menu.addAction(website_action)
-        benchmark_action = QAction(QIcon.fromTheme("utilities-system-monitor", QIcon(str(icon_dir / "benchmark.png"))), "基準測試", self)
-        benchmark_action.triggered.connect(self.run_benchmark)
-        benchmark_action.setShortcut("Ctrl+B")
-        help_menu.addAction(benchmark_action)
 
     def open_website(self):
         """開啟專案的GitHub頁面"""
@@ -287,13 +341,51 @@ class ImageEnhancerApp(QMainWindow):
         QDesktopServices.openUrl(url)
         self.statusBar.showMessage("正在開啟官方網站...", 3000)
 
+    def check_for_updates(self):
+        """檢查應用程式更新"""
+        if self.version_check_thread and self.version_check_thread.isRunning():
+            self.statusBar.showMessage("正在檢查更新中，請稍候...", 3000)
+            return
+        self.statusBar.showMessage("正在檢查更新...")
+        self.version_check_thread = VersionCheckThread(self.version)
+        self.version_check_thread.version_checked.connect(self.on_version_checked)
+        self.version_check_thread.start()
+
+    def on_version_checked(self, has_update, latest_version, error_message):
+        """處理版本檢查結果"""
+        if error_message:
+            self.statusBar.showMessage(f"檢查更新失敗: {error_message}", 5000)
+            QMessageBox.warning(self, "檢查更新失敗", f"無法檢查更新：\n{error_message}")
+            return
+        if has_update:
+            self.statusBar.showMessage(f"發現新版本: {latest_version}", 5000)
+            reply = QMessageBox.question(
+                self, "發現新版本",
+                f"發現新版本 {latest_version}！\n"
+                f"目前版本: {self.version}\n\n"
+                f"是否要前往下載頁面？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                url = QUrl("https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/releases/latest")
+                QDesktopServices.openUrl(url)
+        else:
+            self.statusBar.showMessage("已是最新版本", 3000)
+            QMessageBox.information(
+                self, "檢查更新",
+                f"您使用的已是最新版本！\n"
+                f"目前版本: {self.version}\n"
+                f"最新版本: {latest_version if latest_version else self.version}"
+            )
+
     def on_tab_changed(self, index):
         """當切換頁籤時觸發"""
         tab_messages = {
             0: "圖片處理模式",
             1: "影片處理模式",
             2: "模型訓練模式",
-            3: "圖像評估模式"
+            3: "圖像評估模式",
+            4: "擴充功能管理"
         }
         self.statusBar.showMessage(tab_messages.get(index, "未知模式"))
 
@@ -478,7 +570,7 @@ class ImageEnhancerApp(QMainWindow):
                     widget.close()
                     break
             try:
-                easter_egg = NagatoSakuraEasterEggDialog(self)
+                easter_egg = EasterEggDialog(self)
                 easter_egg.exec()
             except Exception as e:
                 logger.error(f"彩蛋顯示失敗: {str(e)}")
@@ -493,6 +585,30 @@ class ImageEnhancerApp(QMainWindow):
         from src.ui.benchmark import BenchmarkDialog
         dialog = BenchmarkDialog(self.model_manager, self)
         dialog.exec()
+
+    def open_log_viewer(self):
+        """開啟日誌監視器"""
+        try:
+            from src.ui.log_viewer import LogViewerDialog
+            if hasattr(self, 'log_viewer_dialog') and self.log_viewer_dialog.isVisible():
+                self.log_viewer_dialog.raise_()
+                return
+            self.log_viewer_dialog = LogViewerDialog(None)
+            self.log_viewer_dialog.show()
+        except Exception as e:
+            logger.error(f"開啟日誌監視器失敗: {str(e)}")
+            QMessageBox.warning(self, "錯誤", f"無法開啟日誌監視器:\n{str(e)}")
+
+    def closeEvent(self, event):
+        """應用程式關閉事件"""
+        if hasattr(self, 'log_viewer_dialog') and self.log_viewer_dialog and self.log_viewer_dialog.isVisible():
+            self.log_viewer_dialog.close()
+        if self.version_check_thread and self.version_check_thread.isRunning():
+            self.version_check_thread.quit()
+            self.version_check_thread.wait(3000)
+        if hasattr(self, 'model_manager'):
+            self.model_manager.clear_cache()
+        event.accept()
         
 # --- 自訂關於對話框 ---
 class AboutDialog(QDialog):

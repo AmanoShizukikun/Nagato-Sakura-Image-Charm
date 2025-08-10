@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import QGraphicsView, QSizePolicy, QGraphicsScene, QVBoxLayout, QHBoxLayout, QWidget, QGroupBox, QSlider, QButtonGroup, QRadioButton, QPushButton, QStackedWidget, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsEllipseItem, QGraphicsLineItem
 from PyQt6.QtGui import QPainter, QWheelEvent, QMouseEvent, QTransform, QColor, QPen, QImage, QPixmap
 from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QRect
+from PIL import Image
 
 
 class SynchronizedGraphicsView(QGraphicsView):
@@ -79,7 +80,8 @@ class ImageCompareView(SynchronizedGraphicsView):
         self.split_line_color = QColor(255, 255, 255)
         self.split_handle_radius = 15
         self.image_rect = QRectF()  
-        self.setMouseTracking(True) 
+        self.setMouseTracking(True)
+        self._updating_from_external = False 
         
     def set_images(self, original_pixmap, enhanced_pixmap, split_position=None):
         self.original_pixmap = original_pixmap
@@ -92,6 +94,16 @@ class ImageCompareView(SynchronizedGraphicsView):
         if not self.original_pixmap:
             self.setHasContent(False)
             return  
+        if self.original_pixmap and self.enhanced_pixmap:
+            original_size = self.original_pixmap.size()
+            enhanced_size = self.enhanced_pixmap.size()
+            if original_size != enhanced_size:
+                self.enhanced_pixmap = self.enhanced_pixmap.scaled(
+                    original_size, 
+                    Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+        
         self.scene().addPixmap(self.original_pixmap)
         self.scene().setSceneRect(QRectF(self.original_pixmap.rect()))
         self.image_rect = QRectF(self.original_pixmap.rect())
@@ -104,25 +116,40 @@ class ImageCompareView(SynchronizedGraphicsView):
         if not self.original_pixmap or not self.enhanced_pixmap:
             return
         painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         img_rect = self.mapFromScene(self.image_rect).boundingRect()
         split_x = int(img_rect.left() + img_rect.width() * self.split_position)
         painter.save()
-        clip_rect = QRect(split_x, img_rect.top(), img_rect.right() - split_x, img_rect.height())
+        clip_rect = QRect(split_x, int(img_rect.top()), int(img_rect.right() - split_x), int(img_rect.height()))
         painter.setClipRect(clip_rect)
+        target_rect = QRectF(img_rect)
         source_rect = QRectF(0, 0, self.enhanced_pixmap.width(), self.enhanced_pixmap.height())
-        target_rect_f = QRectF(img_rect)
-        painter.drawPixmap(target_rect_f, self.enhanced_pixmap, source_rect)
+        painter.drawPixmap(target_rect, self.enhanced_pixmap, source_rect)
         painter.restore()
         painter.setPen(QPen(self.split_line_color, self.split_line_width))
-        painter.drawLine(split_x, img_rect.top(), split_x, img_rect.bottom())
+        painter.drawLine(split_x, int(img_rect.top()), split_x, int(img_rect.bottom()))
         handle_y = img_rect.top() + img_rect.height() / 2
-        painter.setBrush(QColor(255, 255, 255, 180))
+        painter.setBrush(QColor(255, 255, 255, 200))
+        painter.setPen(QPen(QColor(180, 180, 180), 1))
         painter.drawEllipse(QRectF(
             split_x - self.split_handle_radius / 2,
             handle_y - self.split_handle_radius / 2,
             self.split_handle_radius,
             self.split_handle_radius
         ))
+        painter.setPen(QPen(QColor(100, 100, 100), 2))
+        arrow_size = 4
+        painter.drawLine(split_x - arrow_size, int(handle_y), 
+                        split_x + arrow_size, int(handle_y))
+        painter.drawLine(split_x - arrow_size, int(handle_y) - 2, 
+                        split_x - arrow_size + 2, int(handle_y))
+        painter.drawLine(split_x - arrow_size, int(handle_y) + 2, 
+                        split_x - arrow_size + 2, int(handle_y))
+        painter.drawLine(split_x + arrow_size, int(handle_y) - 2, 
+                        split_x + arrow_size - 2, int(handle_y))
+        painter.drawLine(split_x + arrow_size, int(handle_y) + 2, 
+                        split_x + arrow_size - 2, int(handle_y))
         
     def mousePressEvent(self, event):
         if not self.original_pixmap or not self.enhanced_pixmap:
@@ -152,7 +179,8 @@ class ImageCompareView(SynchronizedGraphicsView):
                 
                 if new_position != self.split_position:
                     self.split_position = new_position
-                    self.splitPositionChanged.emit(self.split_position)
+                    if not self._updating_from_external:
+                        self.splitPositionChanged.emit(self.split_position)
                     self.viewport().update()
                 event.accept()
                 return
@@ -189,6 +217,13 @@ class ImageCompareView(SynchronizedGraphicsView):
             self.fitInView(self.scene().sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self.viewport().update()
         
+    def set_split_position_externally(self, position):
+        """從外部設置分割位置，不會觸發信號（用於滑動條同步）"""
+        self._updating_from_external = True
+        self.split_position = max(0.0, min(1.0, position))
+        self.viewport().update()
+        self._updating_from_external = False
+        
 class MultiViewWidget(QWidget):
     """
     整合三種顯示模式的畫面組件：
@@ -206,6 +241,8 @@ class MultiViewWidget(QWidget):
         self.showing_a = True 
         self.image_a_name = "圖A" 
         self.image_b_name = "圖B" 
+        self.normalize_sizes = True
+        self._updating_slider = False
         self.setup_ui(show_tool_bar)
     
     def setup_ui(self, show_tool_bar=True):
@@ -237,54 +274,46 @@ class MultiViewWidget(QWidget):
             self.toggle_display_btn.clicked.connect(self.toggle_single_display)
             self.toggle_display_btn.setEnabled(False)
             tool_layout.addWidget(self.toggle_display_btn)
+            self.normalize_sizes_btn = QPushButton("標準化尺寸")
+            self.normalize_sizes_btn.setCheckable(True)
+            self.normalize_sizes_btn.setChecked(True)
+            self.normalize_sizes_btn.clicked.connect(self.toggle_normalize_sizes)
+            tool_layout.addWidget(self.normalize_sizes_btn)
             main_layout.addLayout(tool_layout)
         self.view_stack = QStackedWidget()
         main_layout.addWidget(self.view_stack)
-        
-        # 並排顯示畫面
         self.side_by_side_widget = QWidget()
         side_by_side_layout = QHBoxLayout(self.side_by_side_widget)
         side_by_side_layout.setContentsMargins(0, 0, 0, 0)
-        
         self.image_a_group = QGroupBox(self.image_a_name)
         image_a_layout = QVBoxLayout(self.image_a_group)
         self.image_a_scene = QGraphicsScene()
         self.image_a_view = SynchronizedGraphicsView(self.image_a_scene)
         image_a_layout.addWidget(self.image_a_view)
-        
         self.image_b_group = QGroupBox(self.image_b_name)
         image_b_layout = QVBoxLayout(self.image_b_group)
         self.image_b_scene = QGraphicsScene()
         self.image_b_view = SynchronizedGraphicsView(self.image_b_scene)
         image_b_layout.addWidget(self.image_b_view)
-        
         self.image_a_view.viewChanged.connect(self.sync_view_a_to_b)
         self.image_b_view.viewChanged.connect(self.sync_view_b_to_a)
-        
         side_by_side_layout.addWidget(self.image_a_group)
         side_by_side_layout.addWidget(self.image_b_group)
-        
-        # 分割顯示畫面
         self.split_view_widget = QWidget()
         split_layout = QVBoxLayout(self.split_view_widget)
         split_layout.setContentsMargins(0, 0, 0, 0)
-        
         self.split_group = QGroupBox("分割比較")
         split_inner_layout = QVBoxLayout(self.split_group)
         self.split_scene = QGraphicsScene()
         self.split_view = ImageCompareView(self.split_scene)
         split_inner_layout.addWidget(self.split_view)
-        
         self.split_slider = QSlider(Qt.Orientation.Horizontal)
         self.split_slider.setRange(0, 100)
         self.split_slider.setValue(50)
         self.split_slider.valueChanged.connect(self.update_split_position)
         self.split_view.splitPositionChanged.connect(self.update_split_slider)
         split_inner_layout.addWidget(self.split_slider)
-        
         split_layout.addWidget(self.split_group)
-        
-        # 單獨顯示畫面
         self.single_view_widget = QWidget()
         single_layout = QVBoxLayout(self.single_view_widget)
         single_layout.setContentsMargins(0, 0, 0, 0)
@@ -294,15 +323,63 @@ class MultiViewWidget(QWidget):
         self.single_view = SynchronizedGraphicsView(self.single_scene)
         single_inner_layout.addWidget(self.single_view)
         single_layout.addWidget(self.single_group)
-        
         self.view_stack.addWidget(self.side_by_side_widget)
         self.view_stack.addWidget(self.split_view_widget)
         self.view_stack.addWidget(self.single_view_widget)
-        
         if show_tool_bar:
             self.view_mode_group.buttonClicked.connect(self.change_view_mode)
-        
         self.view_stack.setCurrentIndex(0)
+    
+    def toggle_normalize_sizes(self, checked):
+        """切換尺寸標準化功能"""
+        self.normalize_sizes = checked
+        if checked:
+            self.normalize_sizes_btn.setText("標準化尺寸")
+        else:
+            self.normalize_sizes_btn.setText("原始尺寸")
+        self.set_images(self.image_a, self.image_b, self.image_a_name, self.image_b_name)
+    
+    def normalize_image_sizes(self, image_a, image_b):
+        """標準化兩張圖片的尺寸以便於對比"""
+        if not image_a or not image_b:
+            return image_a, image_b 
+        if not self.normalize_sizes:
+            return image_a, image_b
+        size_a = image_a.size
+        size_b = image_b.size
+        if size_a == size_b:
+            return image_a, image_b
+        area_a = size_a[0] * size_a[1]
+        area_b = size_b[0] * size_b[1]
+        if area_a == 0 or area_b == 0:
+            return image_a, image_b
+        if area_b > area_a * 2:
+            try:
+                image_b_resized = image_b.resize(size_a, Image.Resampling.LANCZOS)
+                return image_a, image_b_resized
+            except Exception:
+                return image_a, image_b
+        elif area_a > area_b * 2:
+            try:
+                image_a_resized = image_a.resize(size_b, Image.Resampling.LANCZOS)
+                return image_a_resized, image_b
+            except Exception:
+                return image_a, image_b
+        else:
+            if area_a < area_b:
+                target_size = size_a
+                try:
+                    image_b_resized = image_b.resize(target_size, Image.Resampling.LANCZOS)
+                    return image_a, image_b_resized
+                except Exception:
+                    return image_a, image_b
+            else:
+                target_size = size_b
+                try:
+                    image_a_resized = image_a.resize(target_size, Image.Resampling.LANCZOS)
+                    return image_a_resized, image_b
+                except Exception:
+                    return image_a, image_b
     
     def sync_view_a_to_b(self, view_rect, transform):
         if self.image_b and self.image_b_view._has_content:
@@ -314,30 +391,35 @@ class MultiViewWidget(QWidget):
     
     def set_images(self, image_a, image_b, image_a_name=None, image_b_name=None):
         changed = (self.image_a != image_a or self.image_b != image_b)
-        
         self.image_a = image_a
         self.image_b = image_b
-        
         self.image_a_view.setHasContent(image_a is not None)
         self.image_b_view.setHasContent(image_b is not None)
         self.single_view.setHasContent(image_a is not None or image_b is not None)
-        
         if image_a_name:
             self.image_a_name = image_a_name
-            self.image_a_group.setTitle(self.image_a_name)
-        
         if image_b_name:
             self.image_b_name = image_b_name
+        if self.normalize_sizes and image_a and image_b and image_a.size != image_b.size:
+            area_a = image_a.size[0] * image_a.size[1]
+            area_b = image_b.size[0] * image_b.size[1]
+            if area_b > area_a * 2:
+                self.image_a_group.setTitle(f"{self.image_a_name}")
+                self.image_b_group.setTitle(f"{self.image_b_name} (已縮放至原圖尺寸)")
+            elif area_a > area_b * 2:
+                self.image_a_group.setTitle(f"{self.image_a_name} (已縮放至增強圖尺寸)")
+                self.image_b_group.setTitle(f"{self.image_b_name}")
+            else:
+                self.image_a_group.setTitle(f"{self.image_a_name} (已標準化)")
+                self.image_b_group.setTitle(f"{self.image_b_name} (已標準化)")
+        else:
+            self.image_a_group.setTitle(self.image_a_name)
             self.image_b_group.setTitle(self.image_b_name)
-        
         if image_a and not image_b:
             self.showing_a = True
         elif not image_a and image_b:
             self.showing_a = False
-        
         self.update_views()
-        
-        # 在切換圖片後，重置畫面以保證圖片正確顯示
         if changed:
             self.reset_views()
     
@@ -434,18 +516,21 @@ class MultiViewWidget(QWidget):
         self.update_single_view()
     
     def update_side_by_side_view(self):
+        image_a_display, image_b_display = self.normalize_image_sizes(self.image_a, self.image_b)
+        
         self.image_a_scene.clear()
-        if self.image_a:
-            pixmap = self.pil_to_pixmap(self.image_a)
+        if image_a_display:
+            pixmap = self.pil_to_pixmap(image_a_display)
             self.image_a_scene.addPixmap(pixmap)
             self.image_a_scene.setSceneRect(QRectF(pixmap.rect()))
             self.image_a_view.fitInView(self.image_a_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.image_a_view._has_content = True
         else:
             self.image_a_view._has_content = False
+            
         self.image_b_scene.clear()
-        if self.image_b:
-            pixmap = self.pil_to_pixmap(self.image_b)
+        if image_b_display:
+            pixmap = self.pil_to_pixmap(image_b_display)
             self.image_b_scene.addPixmap(pixmap)
             self.image_b_scene.setSceneRect(QRectF(pixmap.rect()))
             self.image_b_view.fitInView(self.image_b_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
@@ -455,9 +540,20 @@ class MultiViewWidget(QWidget):
     
     def update_split_view(self):
         if self.image_a and self.image_b:
-            pixmap_a = self.pil_to_pixmap(self.image_a)
-            pixmap_b = self.pil_to_pixmap(self.image_b)
+            image_a_display, image_b_display = self.normalize_image_sizes(self.image_a, self.image_b)
+            pixmap_a = self.pil_to_pixmap(image_a_display)
+            pixmap_b = self.pil_to_pixmap(image_b_display)
+            if pixmap_a.size() != pixmap_b.size():
+                target_size = pixmap_a.size()
+                pixmap_b = pixmap_b.scaled(
+                    target_size, 
+                    Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            self._updating_slider = True
             self.split_view.set_images(pixmap_a, pixmap_b, self.split_slider.value() / 100.0)
+            self._updating_slider = False
+            
             self.split_group.setTitle("分割比較")
             self.split_view._has_content = True
             
@@ -525,13 +621,17 @@ class MultiViewWidget(QWidget):
             self.single_view._has_content = False
     
     def update_split_position(self, value):
-        if self.split_view and self.image_a and self.image_b:
+        """從滑動條更新分割位置"""
+        if self.split_view and self.image_a and self.image_b and not self._updating_slider:
             split_position = value / 100.0
-            self.split_view.split_position = split_position
-            self.split_view.viewport().update()
+            self.split_view.set_split_position_externally(split_position)
     
     def update_split_slider(self, position):
-        self.split_slider.setValue(int(position * 100))
+        """從分割線更新滑動條位置"""
+        if not self._updating_slider:
+            self._updating_slider = True
+            self.split_slider.setValue(int(position * 100))
+            self._updating_slider = False
     
     def pil_to_pixmap(self, pil_img):
         """將PIL圖片轉換為QPixmap"""

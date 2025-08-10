@@ -86,7 +86,6 @@ class ImageClassifier:
         返回:
             包含分類結果和推薦模型的字典
         """
-        # 檢查模型是否已載入
         if not self.loaded or self.model is None or self.class_names is None:
             success = self.load_model()
             if not success:
@@ -99,7 +98,6 @@ class ImageClassifier:
                 }
         
         try:
-            # 處理圖像輸入
             if isinstance(image, str):
                 if not os.path.exists(image):
                     return {
@@ -112,23 +110,15 @@ class ImageClassifier:
                 pil_image = Image.open(image).convert('RGB')
             else:
                 pil_image = image.convert('RGB')
-            
-            # 轉換為模型輸入格式
             image_tensor = self.transform(pil_image).unsqueeze(0).to(self.device)
-            
-            # 進行推理
             with torch.no_grad():
                 outputs = self.model(image_tensor)
                 probabilities = torch.nn.functional.softmax(outputs, dim=1)
-                
-                # 獲取排序後的結果
                 probs, indices = torch.sort(probabilities, descending=True)
                 probs = probs[0].cpu().numpy()
                 indices = indices[0].cpu().numpy()
-                
-                # 構建結果列表
                 results = []
-                for i in range(min(len(self.class_names), 10)):  # 取前10個結果
+                for i in range(min(len(self.class_names), 10)):
                     idx = indices[i]
                     prob = float(probs[i] * 100)
                     class_name = self.class_names[idx]
@@ -142,7 +132,6 @@ class ImageClassifier:
                     "top_probability": float(probs[0] * 100),
                     "results": results
                 }
-                
         except Exception as e:
             logger.error(f"圖像分類過程中出錯: {str(e)}")
             return {

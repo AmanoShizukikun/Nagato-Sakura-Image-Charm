@@ -3,6 +3,7 @@ pyqtgraph
 opencv-python
 ffmpeg-python
 requests
+packaging
 scikit-learn
 scikit-image
 matplotlib
@@ -12,3 +13,4 @@ pynvml
 pandas
 Pillow
 numpy
+tqdm
