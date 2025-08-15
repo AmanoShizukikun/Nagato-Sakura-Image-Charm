@@ -4,20 +4,36 @@ from PyQt6.QtCore import Qt, pyqtSignal, QRectF, QRect
 from PIL import Image
 
 
+class EnhancedGraphicsPixmapItem(QGraphicsPixmapItem):
+    """增強的圖片項目，提供更好的縮放抗鋸齒效果"""
+    def __init__(self, pixmap=None, parent=None):
+        super().__init__(pixmap, parent)
+        self.setTransformationMode(Qt.TransformationMode.SmoothTransformation)
+        
+    def paint(self, painter, option, widget=None):
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        super().paint(painter, option, widget)
+
+
 class SynchronizedGraphicsView(QGraphicsView):
     viewChanged = pyqtSignal(QRectF, QTransform)
-    
     def __init__(self, scene=None, parent=None):
         super().__init__(scene, parent)
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        self.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
+        self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontAdjustForAntialiasing, False)
+        self.setOptimizationFlag(QGraphicsView.OptimizationFlag.DontSavePainterState, False)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.setBackgroundBrush(Qt.GlobalColor.gray)
-        self.setMinimumSize(400, 400)
+        self.setMinimumSize(300, 300)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.scale_factor = 1.0
         self.setInteractive(True)
@@ -103,8 +119,8 @@ class ImageCompareView(SynchronizedGraphicsView):
                     Qt.AspectRatioMode.IgnoreAspectRatio,
                     Qt.TransformationMode.SmoothTransformation
                 )
-        
-        self.scene().addPixmap(self.original_pixmap)
+        pixmap_item = EnhancedGraphicsPixmapItem(self.original_pixmap)
+        self.scene().addItem(pixmap_item)
         self.scene().setSceneRect(QRectF(self.original_pixmap.rect()))
         self.image_rect = QRectF(self.original_pixmap.rect())
         self.fitInView(self.scene().sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
@@ -116,8 +132,9 @@ class ImageCompareView(SynchronizedGraphicsView):
         if not self.original_pixmap or not self.enhanced_pixmap:
             return
         painter = QPainter(self.viewport())
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         img_rect = self.mapFromScene(self.image_rect).boundingRect()
         split_x = int(img_rect.left() + img_rect.width() * self.split_position)
         painter.save()
@@ -243,7 +260,20 @@ class MultiViewWidget(QWidget):
         self.image_b_name = "圖B" 
         self.normalize_sizes = True
         self._updating_slider = False
+        self._single_view_state_saved = False
+        self._single_view_transform = None
+        self._single_view_center = None
         self.setup_ui(show_tool_bar)
+    
+    def addPixmapWithAntialiasing(self, scene, pixmap):
+        """添加具有抗鋸齒功能的圖片到場景"""
+        if scene and pixmap:
+            scene.clear()
+            pixmap_item = EnhancedGraphicsPixmapItem(pixmap)
+            scene.addItem(pixmap_item)
+            scene.setSceneRect(QRectF(pixmap.rect()))
+            return pixmap_item
+        return None
     
     def setup_ui(self, show_tool_bar=True):
         main_layout = QVBoxLayout(self)
@@ -393,6 +423,9 @@ class MultiViewWidget(QWidget):
         changed = (self.image_a != image_a or self.image_b != image_b)
         self.image_a = image_a
         self.image_b = image_b
+        if changed:
+            self._reset_single_view_state()
+        
         self.image_a_view.setHasContent(image_a is not None)
         self.image_b_view.setHasContent(image_b is not None)
         self.single_view.setHasContent(image_a is not None or image_b is not None)
@@ -434,7 +467,6 @@ class MultiViewWidget(QWidget):
         self.toggle_display_btn.setEnabled(
             mode == 2 and self.image_a is not None and self.image_b is not None
         )
-        
         self.viewSwitched.emit(mode)
         self.update_views()
     
@@ -448,7 +480,6 @@ class MultiViewWidget(QWidget):
             self.toggle_display_btn.setEnabled(
                 mode == 2 and self.image_a is not None and self.image_b is not None
             )
-            
             self.viewSwitched.emit(mode)
             self.update_views()
     
@@ -465,32 +496,23 @@ class MultiViewWidget(QWidget):
     def reset_views(self):
         """重置所有畫面"""
         was_synchronized = self.image_a_view.synchronized
-        
+        self._reset_single_view_state()
         try:
             self.image_a_view.synchronized = False
             self.image_b_view.synchronized = False
             self.split_view.synchronized = False
             self.single_view.synchronized = False
-            
             self.image_a_view.resetTransform()
             self.image_b_view.resetTransform()
             self.split_view.resetTransform()
             self.single_view.resetTransform()
-            
             if self.image_a and len(self.image_a_scene.items()) > 0:
-                self.image_a_view.fitInView(self.image_a_scene.sceneRect(), 
-                                          Qt.AspectRatioMode.KeepAspectRatio)
-            
+                self.image_a_view.fitInView(self.image_a_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             if self.image_b and len(self.image_b_scene.items()) > 0:
-                self.image_b_view.fitInView(self.image_b_scene.sceneRect(), 
-                                          Qt.AspectRatioMode.KeepAspectRatio)
-            
+                self.image_b_view.fitInView(self.image_b_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             if len(self.single_scene.items()) > 0:
-                self.single_view.fitInView(self.single_scene.sceneRect(), 
-                                         Qt.AspectRatioMode.KeepAspectRatio)
-                
+                self.single_view.fitInView(self.single_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.update_split_view()
-                
         finally:
             self.image_a_view.synchronized = was_synchronized
             self.image_b_view.synchronized = was_synchronized
@@ -502,6 +524,7 @@ class MultiViewWidget(QWidget):
             return
             
         if self.view_stack.currentIndex() == 2:
+            self._save_single_view_state()
             self.showing_a = not self.showing_a
             self.update_single_view()
             self.imageToggled.emit(self.showing_a)
@@ -510,6 +533,30 @@ class MultiViewWidget(QWidget):
             else:
                 self.single_group.setTitle(f"單獨顯示 - {self.image_b_name}")
     
+    def _save_single_view_state(self):
+        """保存單獨顯示模式的視圖狀態"""
+        if self.single_view and self.single_view._has_content:
+            self._single_view_transform = self.single_view.transform()
+            self._single_view_center = self.single_view.mapToScene(self.single_view.viewport().rect()).boundingRect().center()
+            self._single_view_state_saved = True
+    
+    def _restore_single_view_state(self):
+        """恢復單獨顯示模式的視圖狀態"""
+        if (self._single_view_state_saved and 
+            self._single_view_transform is not None and 
+            self._single_view_center is not None and
+            self.single_view and 
+            self.single_view._has_content):
+            self.single_view.setTransform(self._single_view_transform)
+            self.single_view.centerOn(self._single_view_center)
+            self.single_view.scale_factor = self._single_view_transform.m11()
+    
+    def _reset_single_view_state(self):
+        """重置單獨顯示模式的視圖狀態記錄"""
+        self._single_view_state_saved = False
+        self._single_view_transform = None
+        self._single_view_center = None
+    
     def update_views(self):
         self.update_side_by_side_view()
         self.update_split_view()
@@ -517,22 +564,18 @@ class MultiViewWidget(QWidget):
     
     def update_side_by_side_view(self):
         image_a_display, image_b_display = self.normalize_image_sizes(self.image_a, self.image_b)
-        
         self.image_a_scene.clear()
         if image_a_display:
             pixmap = self.pil_to_pixmap(image_a_display)
-            self.image_a_scene.addPixmap(pixmap)
-            self.image_a_scene.setSceneRect(QRectF(pixmap.rect()))
+            self.addPixmapWithAntialiasing(self.image_a_scene, pixmap)
             self.image_a_view.fitInView(self.image_a_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.image_a_view._has_content = True
         else:
             self.image_a_view._has_content = False
-            
         self.image_b_scene.clear()
         if image_b_display:
             pixmap = self.pil_to_pixmap(image_b_display)
-            self.image_b_scene.addPixmap(pixmap)
-            self.image_b_scene.setSceneRect(QRectF(pixmap.rect()))
+            self.addPixmapWithAntialiasing(self.image_b_scene, pixmap)
             self.image_b_view.fitInView(self.image_b_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.image_b_view._has_content = True
         else:
@@ -553,72 +596,80 @@ class MultiViewWidget(QWidget):
             self._updating_slider = True
             self.split_view.set_images(pixmap_a, pixmap_b, self.split_slider.value() / 100.0)
             self._updating_slider = False
-            
             self.split_group.setTitle("分割比較")
             self.split_view._has_content = True
-            
         elif self.image_a:
             pixmap_a = self.pil_to_pixmap(self.image_a)
-            self.split_scene.clear()
-            self.split_scene.addPixmap(pixmap_a)
-            self.split_scene.setSceneRect(QRectF(pixmap_a.rect()))
+            self.addPixmapWithAntialiasing(self.split_scene, pixmap_a)
             self.split_view.fitInView(self.split_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.split_group.setTitle(f"分割比較 - 僅有{self.image_a_name}")
-            self.split_view._has_content = True
-            
+            self.split_view._has_content = True 
         elif self.image_b:
             pixmap_b = self.pil_to_pixmap(self.image_b)
-            self.split_scene.clear()
-            self.split_scene.addPixmap(pixmap_b)
-            self.split_scene.setSceneRect(QRectF(pixmap_b.rect()))
+            self.addPixmapWithAntialiasing(self.split_scene, pixmap_b)
             self.split_view.fitInView(self.split_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.split_group.setTitle(f"分割比較 - 僅有{self.image_b_name}")
             self.split_view._has_content = True
-            
         else:
             self.split_scene.clear()
             self.split_group.setTitle("分割比較 - 請載入圖片")
             self.split_view._has_content = False
     
     def update_single_view(self):
+        should_preserve_view = (self.single_view._has_content and 
+                               self._single_view_state_saved and
+                               (self.image_a is not None and self.image_b is not None))
         self.single_scene.clear()
         if self.showing_a and self.image_a:
-            pixmap = self.pil_to_pixmap(self.image_a)
-            self.single_scene.addPixmap(pixmap)
-            self.single_scene.setSceneRect(QRectF(pixmap.rect()))
-            self.single_view.fitInView(self.single_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+            if self.image_b and self.normalize_sizes:
+                image_a_display, _ = self.normalize_image_sizes(self.image_a, self.image_b)
+                pixmap = self.pil_to_pixmap(image_a_display)
+            else:
+                pixmap = self.pil_to_pixmap(self.image_a)
+            self.addPixmapWithAntialiasing(self.single_scene, pixmap)
             self.single_group.setTitle(f"單獨顯示 - {self.image_a_name}")
             self.single_view._has_content = True
-            
+            if should_preserve_view:
+                self._restore_single_view_state()
+            else:
+                self.single_view.fitInView(self.single_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+                if not self._single_view_state_saved:
+                    self._reset_single_view_state()
         elif not self.showing_a and self.image_b:
-            pixmap = self.pil_to_pixmap(self.image_b)
-            self.single_scene.addPixmap(pixmap)
-            self.single_scene.setSceneRect(QRectF(pixmap.rect()))
-            self.single_view.fitInView(self.single_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+            if self.image_a and self.normalize_sizes:
+                _, image_b_display = self.normalize_image_sizes(self.image_a, self.image_b)
+                pixmap = self.pil_to_pixmap(image_b_display)
+            else:
+                pixmap = self.pil_to_pixmap(self.image_b)
+            self.addPixmapWithAntialiasing(self.single_scene, pixmap)
             self.single_group.setTitle(f"單獨顯示 - {self.image_b_name}")
             self.single_view._has_content = True
-            
+            if should_preserve_view:
+                self._restore_single_view_state()
+            else:
+                self.single_view.fitInView(self.single_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+                if not self._single_view_state_saved:
+                    self._reset_single_view_state()
         elif self.image_a and not self.image_b:
             pixmap = self.pil_to_pixmap(self.image_a)
-            self.single_scene.addPixmap(pixmap)
-            self.single_scene.setSceneRect(QRectF(pixmap.rect()))
+            self.addPixmapWithAntialiasing(self.single_scene, pixmap)
             self.single_view.fitInView(self.single_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.single_group.setTitle(f"單獨顯示 - {self.image_a_name}")
             self.showing_a = True
             self.single_view._has_content = True
-            
+            self._reset_single_view_state()
         elif not self.image_a and self.image_b:
             pixmap = self.pil_to_pixmap(self.image_b)
-            self.single_scene.addPixmap(pixmap)
-            self.single_scene.setSceneRect(QRectF(pixmap.rect()))
+            self.addPixmapWithAntialiasing(self.single_scene, pixmap)
             self.single_view.fitInView(self.single_scene.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.single_group.setTitle(f"單獨顯示 - {self.image_b_name}")
             self.showing_a = False
             self.single_view._has_content = True
-            
+            self._reset_single_view_state()
         else:
             self.single_group.setTitle("單獨顯示 - 請載入圖片")
             self.single_view._has_content = False
+            self._reset_single_view_state()
     
     def update_split_position(self, value):
         """從滑動條更新分割位置"""
@@ -634,10 +685,16 @@ class MultiViewWidget(QWidget):
             self._updating_slider = False
     
     def pil_to_pixmap(self, pil_img):
-        """將PIL圖片轉換為QPixmap"""
+        """將PIL圖片轉換為QPixmap，優化小圖縮放品質"""
         if pil_img:
             img = pil_img.convert("RGB")
             data = img.tobytes("raw", "RGB")
             qimage = QImage(data, img.width, img.height, img.width * 3, QImage.Format.Format_RGB888)
-            return QPixmap.fromImage(qimage)
+            if qimage.width() < 200 or qimage.height() < 200:
+                qimage = qimage.scaled(qimage.width() * 2, qimage.height() * 2, 
+                                     Qt.AspectRatioMode.KeepAspectRatio, 
+                                     Qt.TransformationMode.SmoothTransformation)
+            pixmap = QPixmap.fromImage(qimage)
+            pixmap.setDevicePixelRatio(1.0)
+            return pixmap
         return QPixmap()

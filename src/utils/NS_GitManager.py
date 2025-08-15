@@ -13,10 +13,17 @@ class GitManager:
     def is_git_available() -> bool:
         """檢查 Git 是否可用"""
         try:
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             result = subprocess.run(
                 ['git', '--version'], 
                 capture_output=True, 
-                timeout=10
+                timeout=10,
+                startupinfo=startupinfo
             )
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
@@ -37,12 +44,19 @@ class GitManager:
             if os.path.exists(local_path):
                 return False, f"目標目錄已存在: {local_path}"
             Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             cmd = ['git', 'clone', '--depth', str(depth), repo_url, local_path]
             result = subprocess.run(
                 cmd, 
                 capture_output=True, 
                 text=True, 
-                timeout=300
+                timeout=300,
+                startupinfo=startupinfo
             )
             if result.returncode == 0:
                 return True, "儲存庫克隆成功"
@@ -66,12 +80,19 @@ class GitManager:
         try:
             if not GitManager.is_git_repository(local_path):
                 return False, "不是有效的 Git 儲存庫"
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             result = subprocess.run(
                 ['git', 'pull'], 
                 cwd=local_path,
                 capture_output=True, 
                 text=True, 
-                timeout=300
+                timeout=300,
+                startupinfo=startupinfo
             )
             if result.returncode == 0:
                 stdout = result.stdout.strip()
@@ -119,12 +140,18 @@ class GitManager:
             if not GitManager.is_git_repository(local_path):
                 info['status'] = 'not_git_repo'
                 return info
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
             result = subprocess.run(
                 ['git', 'remote', 'get-url', 'origin'],
                 cwd=local_path,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                startupinfo=startupinfo
             )
             if result.returncode == 0:
                 info['remote_url'] = result.stdout.strip()
@@ -133,7 +160,8 @@ class GitManager:
                 cwd=local_path,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                startupinfo=startupinfo
             )
             if result.returncode == 0:
                 info['last_commit_date'] = result.stdout.strip()
@@ -142,7 +170,8 @@ class GitManager:
                 cwd=local_path,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                startupinfo=startupinfo
             )
             if result.returncode == 0:
                 info['last_commit_hash'] = result.stdout.strip()[:8]
@@ -151,7 +180,8 @@ class GitManager:
                 cwd=local_path,
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                startupinfo=startupinfo
             )
             if result.returncode == 0:
                 info['branch'] = result.stdout.strip() or 'main'

@@ -73,13 +73,20 @@ class GitOperationThread(QThread):
         import queue
         import re
         cmd = ['git', 'clone', '--depth', '1', '--progress', self.repo_url, self.target_path]
+        startupinfo = None
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             universal_newlines=True,
-            bufsize=1
+            bufsize=1,
+            startupinfo=startupinfo
         )
         def monitor_progress():
             current_progress = 20
@@ -178,6 +185,12 @@ class GitOperationThread(QThread):
         """執行 Git update 操作並監控進度"""
         import subprocess
         import threading
+        startupinfo = None
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+        
         self.progress.emit("正在檢查本地儲存庫...")
         self.progress_value.emit(15)
         if not self.git_manager.is_git_repository(self.target_path):
@@ -191,7 +204,8 @@ class GitOperationThread(QThread):
                 cwd=self.target_path,
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
+                startupinfo=startupinfo
             )
             if fetch_process.returncode != 0:
                 self.error.emit(f"獲取更新信息失敗: {fetch_process.stderr}")
@@ -203,14 +217,16 @@ class GitOperationThread(QThread):
                 cwd=self.target_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                startupinfo=startupinfo
             )
             diff_process = subprocess.run(
                 ['git', 'rev-list', '--count', 'HEAD..origin/main'],
                 cwd=self.target_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                startupinfo=startupinfo
             )
             if diff_process.returncode == 0 and diff_process.stdout.strip() == '0':
                 self.progress.emit("已是最新版本")
@@ -225,7 +241,8 @@ class GitOperationThread(QThread):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                universal_newlines=True
+                universal_newlines=True,
+                startupinfo=startupinfo
             )
             current_progress = 50
             while True:
@@ -342,12 +359,19 @@ class ExtensionCard(QFrame):
             if not self.git_manager.is_git_repository(extension_path):
                 return False
             import subprocess
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+            
             fetch_result = subprocess.run(
                 ['git', 'fetch', 'origin'],
                 cwd=extension_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                startupinfo=startupinfo
             )
             if fetch_result.returncode != 0:
                 return False
@@ -356,7 +380,8 @@ class ExtensionCard(QFrame):
                 cwd=extension_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                startupinfo=startupinfo
             )
             if status_result.returncode == 0:
                 commits_behind = status_result.stdout.strip()
@@ -366,7 +391,8 @@ class ExtensionCard(QFrame):
                 cwd=extension_path,
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                startupinfo=startupinfo
             )
             if status_result.returncode == 0:
                 commits_behind = status_result.stdout.strip()
@@ -478,7 +504,12 @@ class ExtensionCard(QFrame):
                         if reply == QMessageBox.StandardButton.Yes:
                             try:
                                 import subprocess
-                                subprocess.run(['explorer', os.path.dirname(extension_path)])
+                                startupinfo = None
+                                if os.name == 'nt':
+                                    startupinfo = subprocess.STARTUPINFO()
+                                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                                    startupinfo.wShowWindow = subprocess.SW_HIDE
+                                subprocess.run(['explorer', os.path.dirname(extension_path)], startupinfo=startupinfo)
                             except Exception as e:
                                 logger.warning(f"無法打開檔案總管: {str(e)}")
                                 QMessageBox.information(
