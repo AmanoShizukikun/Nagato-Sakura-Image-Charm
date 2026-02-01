@@ -3,7 +3,6 @@ import platform
 import logging
 import torch
 import concurrent.futures
-import time
 
 try:
     import cpuinfo
@@ -14,6 +13,7 @@ try:
     import pynvml
 except ImportError:
     pynvml = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,12 @@ class SystemInfo:
             system_info['memory_info'] = "未知記憶體"
         system_info['has_cuda'] = torch.cuda.is_available()
         system_info['has_mps'] = hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()
+        system_info['has_xpu'] = False
+        try:
+            if hasattr(torch, 'xpu') and torch.xpu.is_available():
+                system_info['has_xpu'] = True
+        except:
+            pass
         if system_info['has_cuda']:
             try:
                 cuda_count = torch.cuda.device_count()
@@ -226,6 +232,54 @@ class SystemInfo:
                 system_info['mps_info'] = "Metal GPU (MPS)"
         else:
             system_info['mps_info'] = None
+        if system_info['has_xpu']:
+            try:
+                xpu_count = torch.xpu.device_count()
+                system_info['xpu_count'] = xpu_count
+                system_info['xpus'] = []
+                for i in range(xpu_count):
+                    try:
+                        xpu_name = torch.xpu.get_device_name(i)
+                    except:
+                        xpu_name = f"Intel XPU {i}"
+                    try:
+                        xpu_props = torch.xpu.get_device_properties(i)
+                        total_xpu_mem = xpu_props.total_memory / (1024**3) if hasattr(xpu_props, 'total_memory') else 0
+                    except:
+                        total_xpu_mem = 0
+                    
+                    try:
+                        allocated_xpu = torch.xpu.memory_allocated(i) / (1024**3)
+                    except:
+                        allocated_xpu = 0
+                    
+                    xpu_info = {
+                        'index': i,
+                        'name': xpu_name,
+                        'total_memory': total_xpu_mem,
+                        'allocated_memory': allocated_xpu,
+                        'display_name': f"{xpu_name}",
+                        'memory_info': f"{total_xpu_mem:.2f} GB" if total_xpu_mem > 0 else "未知",
+                        'device_str': f"xpu:{i}" if xpu_count > 1 else "xpu",
+                        'combo_text': f"{xpu_name} (XPU:{i})" if xpu_count > 1 else f"{xpu_name} (XPU)"
+                    }
+                    system_info['xpus'].append(xpu_info)
+                
+                if system_info['xpus']:
+                    system_info['primary_xpu'] = system_info['xpus'][0]
+                    system_info['xpu_info'] = system_info['primary_xpu']['display_name']
+                    system_info['xpu_memory_info'] = system_info['primary_xpu']['memory_info']
+                    logger.info(f"檢測到 XPU 支援: {system_info['xpu_info']}")
+                else:
+                    system_info['xpu_info'] = "XPU 設備"
+                    system_info['xpu_memory_info'] = "未知"
+            except Exception as e:
+                logger.error(f"獲取 XPU 設備資訊時發生錯誤: {str(e)}")
+                system_info['xpu_info'] = "XPU 設備"
+                system_info['xpu_memory_info'] = "未知"
+        else:
+            system_info['xpu_info'] = None
+        
         system_info['pytorch_version'] = torch.__version__
         return system_info
     
@@ -245,6 +299,9 @@ class SystemInfo:
         if system_info.get('has_mps', False):
             mps_name = system_info.get('mps_device_name', 'Metal GPU')
             device_options.append((f"{mps_name} (MPS)", "mps"))
+        if system_info.get('has_xpu', False):
+            for xpu in system_info.get('xpus', []):
+                device_options.append((xpu['combo_text'], xpu['device_str']))
         if system_info.get('has_cuda', False):
             for gpu in system_info.get('gpus', []):
                 device_options.append((gpu['combo_text'], gpu['device_str']))
@@ -267,7 +324,7 @@ class SystemInfo:
             mps_name = system_info.get('mps_device_name', 'Metal GPU')
             return f"{mps_name} (MPS)"
         elif device_type == "cuda":
-            device_index = device.index if hasattr(device, 'index') else 0
+            device_index = device.index if hasattr(device, 'index') and device.index is not None else 0
             gpu_info = None
             for gpu in system_info.get('gpus', []):
                 if gpu['index'] == device_index:
@@ -280,6 +337,26 @@ class SystemInfo:
             else:
                 gpu_name = torch.cuda.get_device_name(device_index)
                 return f"{gpu_name} (CUDA:{device_index})"
+        elif device_type == "xpu":
+            device_index = device.index if hasattr(device, 'index') and device.index is not None else 0
+            xpu_info = None
+            for xpu in system_info.get('xpus', []):
+                if xpu['index'] == device_index:
+                    xpu_info = xpu
+                    break
+            if xpu_info:
+                xpu_name = xpu_info['name']
+                xpu_mem = xpu_info['total_memory']
+                if xpu_mem > 0:
+                    return f"{xpu_name} {xpu_mem:.1f}GB (XPU:{device_index})"
+                else:
+                    return f"{xpu_name} (XPU:{device_index})"
+            else:
+                try:
+                    xpu_name = torch.xpu.get_device_name(device_index)
+                    return f"{xpu_name} (XPU:{device_index})"
+                except:
+                    return f"Intel XPU {device_index} (XPU:{device_index})"
         return str(device)
 
 def get_system_info():

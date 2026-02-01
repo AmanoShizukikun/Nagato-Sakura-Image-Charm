@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
                           QSplitter, QStackedWidget, QListWidget, QListWidgetItem, QSizePolicy, QMessageBox)
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot, QThread, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QFont, QPalette, QColor, QIcon
+from PyQt6.QtWidgets import QApplication
 
 from src.processing.NS_DataProcessor import DataProcessor, ProcessingMode, BlurType, NoiseType
 from src.training.NS_Trainer import Trainer
@@ -172,12 +173,84 @@ class TrainingTab(QWidget):
         self.processing_timer = QTimer()
         self.processing_timer.timeout.connect(self.update_processing_timer)
         self.processing_start_time = None
+        self.theme_labels = []
         self.init_styles()
         self.init_ui()
+        self.update_theme_colors()
         
     def init_styles(self):
         """初始化樣式"""
         pass
+    
+    def update_theme_colors(self):
+        """更新主題相關的顏色樣式"""
+        app = QApplication.instance()
+        palette = app.palette()
+        text_color = palette.color(palette.ColorRole.WindowText)
+        window_color = palette.color(palette.ColorRole.Window)
+        base_color = palette.color(palette.ColorRole.Base)
+        for label_info in self.theme_labels:
+            label = label_info['label']
+            style_type = label_info.get('type', 'normal')
+            if style_type == 'description':
+                # 描述文字使用較淡的顏色
+                label.setStyleSheet(f"color: {text_color.name()}; font-size: 12px; margin: 5px; opacity: 0.7;")
+            elif style_type == 'info':
+                # 信息文字
+                label.setStyleSheet(f"color: {text_color.name()}; margin-bottom: 10px;")
+            elif style_type == 'status_blue':
+                # 藍色狀態
+                label.setStyleSheet("font-weight: bold; color: #2196F3;")
+            elif style_type == 'status_green':
+                # 綠色狀態
+                label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+            elif style_type == 'status_orange':
+                # 橙色狀態
+                label.setStyleSheet("font-weight: bold; color: #FF9800;")
+            elif style_type == 'status_red':
+                # 紅色狀態
+                label.setStyleSheet("font-weight: bold; color: #F44336;")
+            elif style_type == 'log_textbox':
+                # 日誌文本框使用系統主題色
+                label.setStyleSheet(f"""
+                    QTextEdit {{
+                        background-color: {base_color.name()};
+                        color: {text_color.name()};
+                        font-family: 'Consolas', 'Monaco', monospace;
+                        font-size: 11px;
+                        border: 1px solid {text_color.name()};
+                        border-radius: 5px;
+                        padding: 5px;
+                    }}
+                """)
+            else:
+                label.setStyleSheet(f"color: {text_color.name()}; font-weight: bold;")
+    
+    def changeEvent(self, event):
+        """處理變更事件，包括調色盤變更"""
+        if event.type() == event.Type.PaletteChange:
+            self.update_theme_colors()
+        super().changeEvent(event)
+    
+    def update_theme(self):
+        """供外部調用的主題更新方法"""
+        self.update_theme_colors()
+    
+    def set_status_color(self, label, status_type):
+        """設置狀態標籤的顏色"""
+        if status_type == 'blue':
+            label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        elif status_type == 'green':
+            label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        elif status_type == 'orange':
+            label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        elif status_type == 'red':
+            label.setStyleSheet("font-weight: bold; color: #F44336;")
+        else:
+            app = QApplication.instance()
+            palette = app.palette()
+            text_color = palette.color(palette.ColorRole.WindowText)
+            label.setStyleSheet(f"color: {text_color.name()}; font-weight: bold;")
         
     def init_ui(self):
         """初始化使用者介面"""
@@ -216,8 +289,10 @@ class TrainingTab(QWidget):
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll_area.setMinimumWidth(400)
+        scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         left_layout.addWidget(scroll_area)
         left_panel.setLayout(left_layout)
+        left_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         right_panel = QWidget()
         right_layout = QVBoxLayout()
         right_layout.setSpacing(10)
@@ -225,16 +300,16 @@ class TrainingTab(QWidget):
         right_layout.addWidget(self.create_training_progress_group())
         button_group = QGroupBox("訓練控制")
         button_layout = QVBoxLayout()
-        button_layout.setSpacing(10)
+        button_layout.setSpacing(5)
         self.start_training_btn = QPushButton("開始訓練")
         self.start_training_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         self.start_training_btn.clicked.connect(self.start_model_training)
-        self.start_training_btn.setMinimumHeight(40)
+        self.start_training_btn.setMinimumHeight(30)
         self.stop_training_btn = QPushButton("停止訓練")
         self.stop_training_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
         self.stop_training_btn.clicked.connect(self.stop_model_training)
         self.stop_training_btn.setEnabled(False)
-        self.stop_training_btn.setMinimumHeight(40)
+        self.stop_training_btn.setMinimumHeight(30)
         button_layout.addWidget(self.start_training_btn)
         button_layout.addWidget(self.stop_training_btn)
         button_group.setLayout(button_layout)
@@ -242,6 +317,7 @@ class TrainingTab(QWidget):
         right_layout.addStretch()
         right_panel.setLayout(right_layout)
         right_panel.setMinimumWidth(250)
+        right_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
         splitter.setSizes([700, 300])
@@ -255,13 +331,13 @@ class TrainingTab(QWidget):
         """建立資料處理標籤頁"""
         tab = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(5, 5, 5, 5)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setChildrenCollapsible(False)
         left_panel = QWidget()
         left_layout = QVBoxLayout()
-        left_layout.setSpacing(10)
+        left_layout.setSpacing(0)
         mode_group = QGroupBox("處理模式")
         mode_layout = QVBoxLayout()
         self.processing_mode_combo = QComboBox()
@@ -279,7 +355,7 @@ class TrainingTab(QWidget):
         mode_layout.addWidget(self.processing_mode_combo)
         self.mode_description = QLabel("影片擷取模式：從影片檔案中提取圖片幀，支援智能去重和相似度過濾，適合從影片中快速生成訓練數據。")
         self.mode_description.setWordWrap(True)
-        self.mode_description.setStyleSheet("color: #666666; font-size: 12px; margin: 5px;")
+        self.theme_labels.append({'label': self.mode_description, 'type': 'description'})
         mode_layout.addWidget(self.mode_description)
         mode_group.setLayout(mode_layout)
         left_layout.addWidget(mode_group)
@@ -290,7 +366,7 @@ class TrainingTab(QWidget):
         self.create_video_extraction_params()
         settings_group = QGroupBox("基本設定")
         form_layout = QFormLayout()
-        form_layout.setVerticalSpacing(12)
+        form_layout.setVerticalSpacing(2)
         input_layout = QHBoxLayout()
         self.input_dir_edit = QLineEdit("./data/input_images")
         self.input_dir_edit.setMinimumWidth(300)
@@ -427,10 +503,11 @@ class TrainingTab(QWidget):
         left_layout.addWidget(advanced_group)
         left_layout.addStretch()
         left_panel.setLayout(left_layout)
+        left_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         right_panel = QWidget()
         right_layout = QVBoxLayout()
-        right_layout.setSpacing(10)
-        right_layout.setContentsMargins(10, 15, 15, 15)
+        right_layout.setSpacing(0)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         progress_group = QGroupBox("處理進度")
         progress_layout = QVBoxLayout()
         self.data_progress_bar = QProgressBar()
@@ -439,27 +516,37 @@ class TrainingTab(QWidget):
         self.data_progress_bar.setFormat("%p% (%v/%m)")
         self.data_progress_bar.setMinimumHeight(25)
         progress_status_layout = QHBoxLayout()
-        progress_status_layout.addWidget(QLabel("狀態:"))
+        status_desc_label = QLabel("狀態:")
+        self.theme_labels.append({'label': status_desc_label, 'type': 'description'})
+        progress_status_layout.addWidget(status_desc_label)
         self.data_status_label = QLabel("準備就緒")
-        self.data_status_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.theme_labels.append({'label': self.data_status_label, 'type': 'status_blue'})
         progress_status_layout.addWidget(self.data_status_label)
         progress_status_layout.addStretch()
         stats_layout = QGridLayout()
-        stats_layout.addWidget(QLabel("已處理:"), 0, 0)
+        processed_desc_label = QLabel("已處理:")
+        self.theme_labels.append({'label': processed_desc_label, 'type': 'description'})
+        stats_layout.addWidget(processed_desc_label, 0, 0)
         self.processed_count_label = QLabel("0")
-        self.processed_count_label.setStyleSheet("font-weight: bold;")
+        self.theme_labels.append({'label': self.processed_count_label, 'type': 'normal'})
         stats_layout.addWidget(self.processed_count_label, 0, 1)
-        stats_layout.addWidget(QLabel("已生成:"), 0, 2)
+        generated_desc_label = QLabel("已生成:")
+        self.theme_labels.append({'label': generated_desc_label, 'type': 'description'})
+        stats_layout.addWidget(generated_desc_label, 0, 2)
         self.generated_count_label = QLabel("0")
-        self.generated_count_label.setStyleSheet("font-weight: bold;")
+        self.theme_labels.append({'label': self.generated_count_label, 'type': 'normal'})
         stats_layout.addWidget(self.generated_count_label, 0, 3)
-        stats_layout.addWidget(QLabel("處理時間:"), 1, 0)
+        processing_time_desc_label = QLabel("處理時間:")
+        self.theme_labels.append({'label': processing_time_desc_label, 'type': 'description'})
+        stats_layout.addWidget(processing_time_desc_label, 1, 0)
         self.processing_time_label = QLabel("00:00:00")
-        self.processing_time_label.setStyleSheet("font-weight: bold;")
+        self.theme_labels.append({'label': self.processing_time_label, 'type': 'normal'})
         stats_layout.addWidget(self.processing_time_label, 1, 1)
-        stats_layout.addWidget(QLabel("處理速度:"), 1, 2)
+        processing_speed_desc_label = QLabel("處理速度:")
+        self.theme_labels.append({'label': processing_speed_desc_label, 'type': 'description'})
+        stats_layout.addWidget(processing_speed_desc_label, 1, 2)
         self.processing_speed_label = QLabel("0.0 img/s")
-        self.processing_speed_label.setStyleSheet("font-weight: bold;")
+        self.theme_labels.append({'label': self.processing_speed_label, 'type': 'normal'})
         stats_layout.addWidget(self.processing_speed_label, 1, 3)
         progress_layout.addWidget(self.data_progress_bar)
         progress_layout.addLayout(progress_status_layout)
@@ -468,58 +555,78 @@ class TrainingTab(QWidget):
         right_layout.addWidget(progress_group)
         quality_group = QGroupBox("品質統計")
         quality_layout = QGridLayout()
-        quality_layout.addWidget(QLabel("平均PSNR:"), 0, 0)
+        avg_psnr_desc_label = QLabel("平均PSNR:")
+        self.theme_labels.append({'label': avg_psnr_desc_label, 'type': 'description'})
+        quality_layout.addWidget(avg_psnr_desc_label, 0, 0)
         self.avg_psnr_label = QLabel("N/A")
-        self.avg_psnr_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        self.theme_labels.append({'label': self.avg_psnr_label, 'type': 'status_green'})
         quality_layout.addWidget(self.avg_psnr_label, 0, 1)
-        quality_layout.addWidget(QLabel("PSNR範圍:"), 0, 2)
+        psnr_range_desc_label = QLabel("PSNR範圍:")
+        self.theme_labels.append({'label': psnr_range_desc_label, 'type': 'description'})
+        quality_layout.addWidget(psnr_range_desc_label, 0, 2)
         self.psnr_range_label = QLabel("N/A ~ N/A dB")
-        self.psnr_range_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.theme_labels.append({'label': self.psnr_range_label, 'type': 'status_blue'})
         quality_layout.addWidget(self.psnr_range_label, 0, 3)
-        quality_layout.addWidget(QLabel("平均SSIM:"), 1, 0)
+        avg_ssim_desc_label = QLabel("平均SSIM:")
+        self.theme_labels.append({'label': avg_ssim_desc_label, 'type': 'description'})
+        quality_layout.addWidget(avg_ssim_desc_label, 1, 0)
         self.avg_ssim_label = QLabel("N/A")
-        self.avg_ssim_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        self.theme_labels.append({'label': self.avg_ssim_label, 'type': 'status_green'})
         quality_layout.addWidget(self.avg_ssim_label, 1, 1)
-        quality_layout.addWidget(QLabel("SSIM範圍:"), 1, 2)
+        ssim_range_desc_label = QLabel("SSIM範圍:")
+        self.theme_labels.append({'label': ssim_range_desc_label, 'type': 'description'})
+        quality_layout.addWidget(ssim_range_desc_label, 1, 2)
         self.ssim_range_label = QLabel("N/A ~ N/A")
-        self.ssim_range_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.theme_labels.append({'label': self.ssim_range_label, 'type': 'status_blue'})
         quality_layout.addWidget(self.ssim_range_label, 1, 3)
-        quality_layout.addWidget(QLabel("平均檔案大小:"), 2, 0)
+        avg_filesize_desc_label = QLabel("平均檔案大小:")
+        self.theme_labels.append({'label': avg_filesize_desc_label, 'type': 'description'})
+        quality_layout.addWidget(avg_filesize_desc_label, 2, 0)
         self.avg_filesize_label = QLabel("N/A")
-        self.avg_filesize_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        self.theme_labels.append({'label': self.avg_filesize_label, 'type': 'status_orange'})
         quality_layout.addWidget(self.avg_filesize_label, 2, 1)
-        quality_layout.addWidget(QLabel("壓縮比:"), 2, 2)
+        compression_ratio_desc_label = QLabel("壓縮比:")
+        self.theme_labels.append({'label': compression_ratio_desc_label, 'type': 'description'})
+        quality_layout.addWidget(compression_ratio_desc_label, 2, 2)
         self.compression_ratio_label = QLabel("N/A")
-        self.compression_ratio_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        self.theme_labels.append({'label': self.compression_ratio_label, 'type': 'status_orange'})
         quality_layout.addWidget(self.compression_ratio_label, 2, 3)
         quality_group.setLayout(quality_layout)
         right_layout.addWidget(quality_group)
         monitoring_group = QGroupBox("處理監控")
         monitoring_layout = QGridLayout()
-        monitoring_layout.addWidget(QLabel("已用時間:"), 0, 0)
+        elapsed_time_desc_label = QLabel("已用時間:")
+        self.theme_labels.append({'label': elapsed_time_desc_label, 'type': 'description'})
+        monitoring_layout.addWidget(elapsed_time_desc_label, 0, 0)
         self.elapsed_time_label = QLabel("00:00:00")
-        self.elapsed_time_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        self.theme_labels.append({'label': self.elapsed_time_label, 'type': 'status_green'})
         monitoring_layout.addWidget(self.elapsed_time_label, 0, 1)
-        monitoring_layout.addWidget(QLabel("預估剩餘:"), 1, 0)
+        remaining_time_desc_label = QLabel("預估剩餘:")
+        self.theme_labels.append({'label': remaining_time_desc_label, 'type': 'description'})
+        monitoring_layout.addWidget(remaining_time_desc_label, 1, 0)
         self.remaining_time_label = QLabel("計算中...")
-        self.remaining_time_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        self.theme_labels.append({'label': self.remaining_time_label, 'type': 'status_orange'})
         monitoring_layout.addWidget(self.remaining_time_label, 1, 1)
-        monitoring_layout.addWidget(QLabel("預計完成:"), 2, 0)
+        estimated_finish_desc_label = QLabel("預計完成:")
+        self.theme_labels.append({'label': estimated_finish_desc_label, 'type': 'description'})
+        monitoring_layout.addWidget(estimated_finish_desc_label, 2, 0)
         self.estimated_finish_label = QLabel("N/A")
-        self.estimated_finish_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.theme_labels.append({'label': self.estimated_finish_label, 'type': 'status_blue'})
         monitoring_layout.addWidget(self.estimated_finish_label, 2, 1)
-        monitoring_layout.addWidget(QLabel("預計輸出:"), 3, 0)
+        estimated_output_desc_label = QLabel("預計輸出:")
+        self.theme_labels.append({'label': estimated_output_desc_label, 'type': 'description'})
+        monitoring_layout.addWidget(estimated_output_desc_label, 3, 0)
         self.estimated_output_label = QLabel("N/A")
-        self.estimated_output_label.setStyleSheet("font-weight: bold;")
+        self.theme_labels.append({'label': self.estimated_output_label, 'type': 'normal'})
         monitoring_layout.addWidget(self.estimated_output_label, 3, 1)
         monitoring_group.setLayout(monitoring_layout)
         right_layout.addWidget(monitoring_group)
         log_group = QGroupBox("處理日誌")
         log_layout = QVBoxLayout()
         self.processing_log = QTextEdit()
-        self.processing_log.setMaximumHeight(150)
         self.processing_log.setReadOnly(True)
-        self.processing_log.setStyleSheet("font-family: 'Consolas', monospace; font-size: 12px;")
+        self.processing_log.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.theme_labels.append({'label': self.processing_log, 'type': 'log_textbox'})
         log_control_layout = QHBoxLayout()
         self.clear_log_btn = QPushButton("清除日誌")
         self.clear_log_btn.clicked.connect(self.processing_log.clear)
@@ -538,25 +645,20 @@ class TrainingTab(QWidget):
         self.start_processing_btn = QPushButton("開始處理")
         self.start_processing_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         self.start_processing_btn.clicked.connect(self.start_data_processing)
-        self.start_processing_btn.setMinimumHeight(40)
-        self.start_processing_btn.setStyleSheet("font-weight: bold;")
+        self.start_processing_btn.setMinimumHeight(30)
         self.stop_processing_btn = QPushButton("停止處理")
         self.stop_processing_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
         self.stop_processing_btn.clicked.connect(self.stop_data_processing)
         self.stop_processing_btn.setEnabled(False)
-        self.stop_processing_btn.setMinimumHeight(40)
-        self.reset_processing_btn = QPushButton("重置設定")
-        self.reset_processing_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
-        self.reset_processing_btn.clicked.connect(self.reset_processing_settings)
-        self.reset_processing_btn.setMinimumHeight(40)
+        self.stop_processing_btn.setMinimumHeight(30)
         button_layout.addWidget(self.start_processing_btn)
         button_layout.addWidget(self.stop_processing_btn)
-        button_layout.addWidget(self.reset_processing_btn)
         button_group.setLayout(button_layout)
         right_layout.addWidget(button_group)
         right_layout.addStretch()
         right_panel.setLayout(right_layout)
         right_panel.setMinimumWidth(250)
+        right_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         splitter.addWidget(left_panel)
         splitter.addWidget(right_panel)
         splitter.setSizes([700, 300])
@@ -613,7 +715,7 @@ class TrainingTab(QWidget):
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll_area.setMaximumHeight(400)
+        scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout()
         basic_group = QGroupBox("基本設定")
@@ -959,10 +1061,10 @@ class TrainingTab(QWidget):
         form_layout = QFormLayout()
         info_label = QLabel("自訂流程允許您手動配置處理步驟和參數。請按順序添加處理步驟：")
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666666; margin-bottom: 10px;")
+        self.theme_labels.append({'label': info_label, 'type': 'info'})
         form_layout.addRow(info_label)
         self.custom_steps_list = QListWidget()
-        self.custom_steps_list.setMaximumHeight(120)
+        self.custom_steps_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         form_layout.addRow("處理步驟:", self.custom_steps_list)
         buttons_layout = QHBoxLayout()
         self.add_jpeg_step_btn = QPushButton("+ JPEG壓縮")
@@ -1199,7 +1301,7 @@ class TrainingTab(QWidget):
             'use_histogram': True,
             'use_edge_density': True,
             'use_feature_comparison': True,
-            'histogram_threshold': self.histogram_threshold.value(),
+            'histogram_threshold': 0.85,
             'edge_density_threshold': 0.02,
             'solid_color_threshold': 150.0,
             'perceptual_hash_threshold': 8,
@@ -1213,7 +1315,7 @@ class TrainingTab(QWidget):
             'sort_by_size': False
         }
         self.data_status_label.setText("影片擷取中...")
-        self.data_status_label.setStyleSheet("font-weight: bold; color: #2196F3;")
+        self.set_status_color(self.data_status_label, 'blue')
         self.start_processing_btn.setEnabled(False)
         self.stop_processing_btn.setEnabled(True)
         self.data_progress_bar.setValue(0)
@@ -1248,7 +1350,7 @@ class TrainingTab(QWidget):
     def video_extraction_completed(self, final_stats):
         """影片擷取完成"""
         self.data_status_label.setText("擷取完成")
-        self.data_status_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        self.set_status_color(self.data_status_label, 'green')
         self.data_progress_bar.setValue(self.data_progress_bar.maximum())
         self.start_processing_btn.setEnabled(True)
         self.stop_processing_btn.setEnabled(False)
@@ -1282,34 +1384,6 @@ class TrainingTab(QWidget):
             if hasattr(self, 'processing_start_time'):
                 self.processing_start_time = None
             self.add_processing_log("處理已停止", "warning")
-        
-    def reset_processing_settings(self):
-        """重置處理設定"""
-        reply = QMessageBox.question(self, "重置設定", "確定要重置所有處理設定嗎？", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        if reply == QMessageBox.StandardButton.Yes:
-            self.input_dir_edit.setText("./data/input_images")
-            self.output_dir_edit.setText("./data/quality_dataset_t")
-            self.min_quality_spin.setValue(10)
-            self.max_quality_spin.setValue(101)
-            self.interval_spin.setValue(10)
-            self.workers_spin.setValue(max(1, os.cpu_count() // 2))
-            self.processing_mode_combo.setCurrentIndex(0)
-            self.file_filter_edit.setText("jpg,jpeg,png,bmp,tiff,webp")
-            self.output_quality_spin.setValue(95)
-            self.memory_limit_check.setChecked(False)
-            self.memory_limit_spin.setValue(4096)
-            self.processed_count_label.setText("0")
-            self.generated_count_label.setText("0")
-            self.processing_time_label.setText("00:00:00")
-            self.processing_speed_label.setText("0.0 img/s")
-            self.avg_psnr_label.setText("N/A")
-            self.psnr_range_label.setText("N/A ~ N/A dB")
-            self.avg_ssim_label.setText("N/A")
-            self.ssim_range_label.setText("N/A ~ N/A")
-            self.avg_filesize_label.setText("N/A")
-            self.compression_ratio_label.setText("N/A")
-            self.processing_log.clear()
-            self.add_processing_log("設定已重置", "info")
         
     def save_processing_log(self):
         """保存處理日誌"""
@@ -1351,7 +1425,7 @@ class TrainingTab(QWidget):
         """創建基本設定群組"""
         group = QGroupBox("基本設定")
         form_layout = QFormLayout()
-        form_layout.setVerticalSpacing(10)
+        form_layout.setVerticalSpacing(2)
         dataset_layout = QHBoxLayout()
         self.dataset_dir_edit = QLineEdit("./data/quality_dataset")
         self.dataset_dir_edit.setReadOnly(True)
@@ -1410,15 +1484,21 @@ class TrainingTab(QWidget):
         group = QGroupBox("訓練參數")
         main_layout = QVBoxLayout()
         grid_layout = QGridLayout()
-        grid_layout.setHorizontalSpacing(20)
-        grid_layout.setVerticalSpacing(10)
-        grid_layout.addWidget(QLabel("訓練週期數:"), 0, 0)
+        grid_layout.setHorizontalSpacing(10)
+        grid_layout.setVerticalSpacing(2)
+        
+        epochs_label = QLabel("訓練週期數:")
+        self.theme_labels.append({'label': epochs_label, 'type': 'description'})
+        grid_layout.addWidget(epochs_label, 0, 0)
         self.num_epochs_spin = QSpinBox()
         self.num_epochs_spin.setRange(1, 10000)
         self.num_epochs_spin.setValue(1000)
         self.num_epochs_spin.setSuffix(" epochs")
         grid_layout.addWidget(self.num_epochs_spin, 0, 1)
-        grid_layout.addWidget(QLabel("批次大小:"), 1, 0)
+        
+        batch_size_label = QLabel("批次大小:")
+        self.theme_labels.append({'label': batch_size_label, 'type': 'description'})
+        grid_layout.addWidget(batch_size_label, 1, 0)
         self.batch_size_spin = QSpinBox()
         self.batch_size_spin.setRange(1, 32)
         self.batch_size_spin.setValue(6)
@@ -1576,26 +1656,41 @@ class TrainingTab(QWidget):
         """創建訓練進度群組"""
         group = QGroupBox("訓練監控")
         layout = QVBoxLayout()
-        layout.setSpacing(15)
+        layout.setSpacing(2) 
         status_group = QGroupBox("訓練狀態")
         status_layout = QGridLayout()
-        status_layout.setHorizontalSpacing(10)
-        status_layout.setVerticalSpacing(8)
-        status_layout.addWidget(QLabel("狀態:"), 0, 0)
+        status_layout.setHorizontalSpacing(4) 
+        status_layout.setVerticalSpacing(1)
+        
+        status_label = QLabel("狀態:")
+        self.theme_labels.append({'label': status_label, 'type': 'description'})
+        status_layout.addWidget(status_label, 0, 0)
         self.training_status_label = QLabel("準備就緒")
         self.training_status_label.setStyleSheet("font-weight: bold; color: blue;")
         status_layout.addWidget(self.training_status_label, 0, 1)
-        status_layout.addWidget(QLabel("週期:"), 1, 0)
+        
+        epoch_label = QLabel("週期:")
+        self.theme_labels.append({'label': epoch_label, 'type': 'description'})
+        status_layout.addWidget(epoch_label, 1, 0)
         self.current_epoch_label = QLabel("0/0")
         self.current_epoch_label.setStyleSheet("font-weight: bold;")
+        self.theme_labels.append({'label': self.current_epoch_label, 'type': 'normal'})
         status_layout.addWidget(self.current_epoch_label, 1, 1)
-        status_layout.addWidget(QLabel("已用時間:"), 2, 0)
+        
+        elapsed_label = QLabel("已用時間:")
+        self.theme_labels.append({'label': elapsed_label, 'type': 'description'})
+        status_layout.addWidget(elapsed_label, 2, 0)
         self.elapsed_time_label = QLabel("00:00:00")
         self.elapsed_time_label.setStyleSheet("font-weight: bold;")
+        self.theme_labels.append({'label': self.elapsed_time_label, 'type': 'normal'})
         status_layout.addWidget(self.elapsed_time_label, 2, 1)
-        status_layout.addWidget(QLabel("預估剩餘:"), 3, 0)
+        
+        eta_label = QLabel("預估剩餘:")
+        self.theme_labels.append({'label': eta_label, 'type': 'description'})
+        status_layout.addWidget(eta_label, 3, 0)
         self.eta_label = QLabel("00:00:00")
         self.eta_label.setStyleSheet("font-weight: bold;")
+        self.theme_labels.append({'label': self.eta_label, 'type': 'normal'})
         status_layout.addWidget(self.eta_label, 3, 1)
         status_group.setLayout(status_layout)
         layout.addWidget(status_group)
@@ -1610,51 +1705,65 @@ class TrainingTab(QWidget):
         layout.addWidget(progress_group)
         metrics_group = QGroupBox("訓練指標")
         metrics_layout = QGridLayout()
-        metrics_layout.setHorizontalSpacing(10)
-        metrics_layout.setVerticalSpacing(8)
-        metrics_layout.addWidget(QLabel("生成器損失:"), 0, 0)
+        metrics_layout.setHorizontalSpacing(4)
+        metrics_layout.setVerticalSpacing(1)
+        
+        g_loss_desc_label = QLabel("生成器損失:")
+        self.theme_labels.append({'label': g_loss_desc_label, 'type': 'description'})
+        metrics_layout.addWidget(g_loss_desc_label, 0, 0)
         self.g_loss_label = QLabel("0.0000")
         self.g_loss_label.setStyleSheet("font-weight: bold; color: red;")
+        self.theme_labels.append({'label': self.g_loss_label, 'type': 'status_red'})
         metrics_layout.addWidget(self.g_loss_label, 0, 1)
-        metrics_layout.addWidget(QLabel("判別器損失:"), 1, 0)
+        
+        d_loss_desc_label = QLabel("判別器損失:")
+        self.theme_labels.append({'label': d_loss_desc_label, 'type': 'description'})
+        metrics_layout.addWidget(d_loss_desc_label, 1, 0)
         self.d_loss_label = QLabel("0.0000")
         self.d_loss_label.setStyleSheet("font-weight: bold; color: red;")
+        self.theme_labels.append({'label': self.d_loss_label, 'type': 'status_red'})
         metrics_layout.addWidget(self.d_loss_label, 1, 1)
-        metrics_layout.addWidget(QLabel("PSNR:"), 2, 0)
+        
+        psnr_desc_label = QLabel("PSNR:")
+        self.theme_labels.append({'label': psnr_desc_label, 'type': 'description'})
+        metrics_layout.addWidget(psnr_desc_label, 2, 0)
         self.psnr_label = QLabel("0.00 dB")
         self.psnr_label.setStyleSheet("font-weight: bold; color: green;")
+        self.theme_labels.append({'label': self.psnr_label, 'type': 'status_green'})
         metrics_layout.addWidget(self.psnr_label, 2, 1)
-        metrics_layout.addWidget(QLabel("SSIM:"), 3, 0)
+        
+        ssim_desc_label = QLabel("SSIM:")
+        self.theme_labels.append({'label': ssim_desc_label, 'type': 'description'})
+        metrics_layout.addWidget(ssim_desc_label, 3, 0)
         self.ssim_label = QLabel("0.0000")
         self.ssim_label.setStyleSheet("font-weight: bold; color: green;")
+        self.theme_labels.append({'label': self.ssim_label, 'type': 'status_green'})
         metrics_layout.addWidget(self.ssim_label, 3, 1)
-        metrics_layout.addWidget(QLabel("學習率:"), 4, 0)
+        
+        lr_desc_label = QLabel("學習率:")
+        self.theme_labels.append({'label': lr_desc_label, 'type': 'description'})
+        metrics_layout.addWidget(lr_desc_label, 4, 0)
         self.lr_label = QLabel("0.000000")
         self.lr_label.setStyleSheet("font-weight: bold; color: purple;")
+        self.theme_labels.append({'label': self.lr_label, 'type': 'status_blue'})
         metrics_layout.addWidget(self.lr_label, 4, 1)
-        metrics_layout.addWidget(QLabel("GPU記憶體:"), 5, 0)
+        
+        gpu_memory_desc_label = QLabel("GPU記憶體:")
+        self.theme_labels.append({'label': gpu_memory_desc_label, 'type': 'description'})
+        metrics_layout.addWidget(gpu_memory_desc_label, 5, 0)
         self.gpu_memory_label = QLabel("0 MB")
         self.gpu_memory_label.setStyleSheet("font-weight: bold; color: orange;")
+        self.theme_labels.append({'label': self.gpu_memory_label, 'type': 'status_orange'})
         metrics_layout.addWidget(self.gpu_memory_label, 5, 1)
         metrics_group.setLayout(metrics_layout)
         layout.addWidget(metrics_group)
         log_group = QGroupBox("訓練日誌")
         log_layout = QVBoxLayout()
         self.training_log = QTextEdit()
-        self.training_log.setMaximumHeight(200)
         self.training_log.setReadOnly(True)
+        self.training_log.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.training_log.setPlainText("等待訓練開始...")
-        self.training_log.setStyleSheet("""
-            QTextEdit {
-                background-color: #2c3e50;
-                color: #ecf0f1;
-                font-family: 'Consolas', 'Monaco', monospace;
-                font-size: 11px;
-                border: 1px solid #34495e;
-                border-radius: 5px;
-                padding: 5px;
-            }
-        """)
+        self.theme_labels.append({'label': self.training_log, 'type': 'log_textbox'})
         log_layout.addWidget(self.training_log)
         log_group.setLayout(log_layout)
         layout.addWidget(log_group)
@@ -1815,7 +1924,7 @@ class TrainingTab(QWidget):
         self.start_processing_btn.setEnabled(False)
         self.stop_processing_btn.setEnabled(True)
         self.data_status_label.setText("正在處理...")
-        self.data_status_label.setStyleSheet("font-weight: bold; color: #FF9800;")
+        self.set_status_color(self.data_status_label, 'orange')
         self.data_progress_bar.setValue(0)
         self.processing_start_time = datetime.now()
         self.processing_timer.start(1000)
@@ -1876,7 +1985,7 @@ class TrainingTab(QWidget):
     def enhanced_data_processing_completed(self, final_stats):
         """增強的資料處理完成"""
         self.data_status_label.setText("處理完成")
-        self.data_status_label.setStyleSheet("font-weight: bold; color: #4CAF50;")
+        self.set_status_color(self.data_status_label, 'green')
         self.data_progress_bar.setValue(self.data_progress_bar.maximum())
         self.start_processing_btn.setEnabled(True)
         self.stop_processing_btn.setEnabled(False)
@@ -1898,7 +2007,7 @@ class TrainingTab(QWidget):
     def enhanced_data_processing_error(self, error_message):
         """增強的資料處理錯誤"""
         self.data_status_label.setText("處理錯誤")
-        self.data_status_label.setStyleSheet("font-weight: bold; color: #F44336;")
+        self.set_status_color(self.data_status_label, 'red')
         self.start_processing_btn.setEnabled(True)
         self.stop_processing_btn.setEnabled(False)
         self.processing_timer.stop()

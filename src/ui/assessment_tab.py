@@ -282,9 +282,9 @@ class MetricDisplay(QFrame):
             layout.addWidget(label, i + 1, 0)
             layout.addWidget(value, i + 1, 1)
             self.metrics[key] = value
-        ai_header = QLabel("<b>AI圖像品質評分</b>")
-        ai_header.setStyleSheet("font-size: 12px; padding-top: 6px;")
-        layout.addWidget(ai_header, len(metrics_list) + 1, 0, 1, 2)
+        self.ai_header = QLabel("<b>AI圖像品質評分</b>")
+        self.ai_header.setStyleSheet("font-size: 12px; padding-top: 6px;")
+        layout.addWidget(self.ai_header, len(metrics_list) + 1, 0, 1, 2)
         ai_metrics_list = [
             ("ai_score_a", "圖A評分:", "AI模型評估圖A的品質分數 (0-100)"),
             ("ai_score_b", "圖B評分:", "AI模型評估圖B的品質分數 (0-100)")
@@ -300,17 +300,15 @@ class MetricDisplay(QFrame):
             layout.addWidget(label, row_pos, 0)
             layout.addWidget(value, row_pos, 1)
             self.metrics[key] = value
-        model_header = QLabel("<b>AI模型推薦</b>")
-        model_header.setStyleSheet("font-size: 12px; padding-top: 6px;")
-        layout.addWidget(model_header, len(metrics_list) + 4, 0, 1, 2)
-        
+        self.model_header = QLabel("<b>AI模型推薦</b>")
+        self.model_header.setStyleSheet("font-size: 12px; padding-top: 6px;")
+        layout.addWidget(self.model_header, len(metrics_list) + 4, 0, 1, 2)
         model_metrics_list = [
             ("model_a", "圖A推薦:", "AI推薦用於處理圖A的最佳模型"),
             ("model_a_acc", "準確率:", "推薦模型的準確率"),
             ("model_b", "圖B推薦:", "AI推薦用於處理圖B的最佳模型"),
             ("model_b_acc", "準確率:", "推薦模型的準確率")
         ]
-        
         for i, (key, text, tooltip) in enumerate(model_metrics_list):
             label = QLabel(text)
             value = QLabel("--")
@@ -322,6 +320,49 @@ class MetricDisplay(QFrame):
             layout.addWidget(label, row_pos, 0)
             layout.addWidget(value, row_pos, 1)
             self.metrics[key] = value
+        self.model_states = {
+            'model_a': {'value': None, 'status': 'default'},
+            'model_b': {'value': None, 'status': 'default'}
+        }
+        self.update_theme_colors()
+
+    def update_theme_colors(self):
+        """更新主題相關的顏色樣式"""
+        app = QApplication.instance()
+        palette = app.palette()
+        text_color = palette.color(palette.ColorRole.WindowText)
+        header_color = text_color.name()
+        self.title_label.setStyleSheet(f"font-size: 13px; color: {header_color};")
+        self.ai_header.setStyleSheet(f"font-size: 12px; padding-top: 6px; color: {header_color};")
+        self.model_header.setStyleSheet(f"font-size: 12px; padding-top: 6px; color: {header_color};")
+        for key, label in self.metrics.items():
+            if label.text() == "--":
+                label.setStyleSheet(f"color: {text_color.name()}; font-weight: bold; padding: 2px;")
+        self._apply_model_colors()
+    
+    def _apply_model_colors(self):
+        """根據當前狀態重新應用模型推薦的顏色"""
+        app = QApplication.instance()
+        palette = app.palette()
+        text_color = palette.color(palette.ColorRole.WindowText)
+        for model_key in ['model_a', 'model_b']:
+            if model_key in self.metrics:
+                status = self.model_states[model_key]['status']
+                value = self.model_states[model_key]['value']
+                if status == 'null':
+                    self.metrics[model_key].setStyleSheet("color: red; font-weight: bold; padding: 2px;")
+                elif status == 'no_model':
+                    self.metrics[model_key].setStyleSheet("color: #888; font-weight: bold; padding: 2px;")
+                elif status == 'normal':
+                    self.metrics[model_key].setStyleSheet(f"color: {text_color.name()}; font-weight: bold; padding: 2px;")
+                else:
+                    self.metrics[model_key].setStyleSheet(f"color: {text_color.name()}; font-weight: bold; padding: 2px;")
+    
+    def changeEvent(self, event):
+        """處理變更事件，包括調色盤變更"""
+        if event.type() == event.Type.PaletteChange:
+            self.update_theme_colors()
+        super().changeEvent(event)
 
     def update_metrics(self, results):
         """更新指標值並使用顏色提示"""
@@ -395,13 +436,14 @@ class MetricDisplay(QFrame):
         if 'model_a' in results:
             if results['model_a'] is None:
                 self.metrics["model_a"].setText("NULL")
-                self.metrics["model_a"].setStyleSheet("color: red; font-weight: bold; padding: 2px;")
+                self.model_states['model_a'] = {'value': None, 'status': 'null'}
             elif results['model_a'] == "未偵測到模型":
                 self.metrics["model_a"].setText("未偵測到模型")
-                self.metrics["model_a"].setStyleSheet("color: #888; font-weight: bold; padding: 2px;")
+                self.model_states['model_a'] = {'value': "未偵測到模型", 'status': 'no_model'}
             else:
                 self.metrics["model_a"].setText(results['model_a'])
-                self.metrics["model_a"].setStyleSheet("color: white; font-weight: bold; padding: 2px;")
+                self.model_states['model_a'] = {'value': results['model_a'], 'status': 'normal'}
+            self._apply_model_colors()
             
         if 'model_a_acc' in results:
             acc = results['model_a_acc']
@@ -420,13 +462,14 @@ class MetricDisplay(QFrame):
         if 'model_b' in results:
             if results['model_b'] is None:
                 self.metrics["model_b"].setText("NULL")
-                self.metrics["model_b"].setStyleSheet("color: red; font-weight: bold; padding: 2px;")
+                self.model_states['model_b'] = {'value': None, 'status': 'null'}
             elif results['model_b'] == "未偵測到模型":
                 self.metrics["model_b"].setText("未偵測到模型")
-                self.metrics["model_b"].setStyleSheet("color: #888; font-weight: bold; padding: 2px;")
+                self.model_states['model_b'] = {'value': "未偵測到模型", 'status': 'no_model'}
             else:
                 self.metrics["model_b"].setText(results['model_b'])
-                self.metrics["model_b"].setStyleSheet("color: white; font-weight: bold; padding: 2px;")
+                self.model_states['model_b'] = {'value': results['model_b'], 'status': 'normal'}
+            self._apply_model_colors()
             
         if 'model_b_acc' in results:
             acc = results['model_b_acc']
@@ -444,9 +487,16 @@ class MetricDisplay(QFrame):
                     
     def clear(self):
         """清空所有指標數值"""
+        app = QApplication.instance()
+        palette = app.palette()
+        text_color = palette.color(palette.ColorRole.WindowText)
         for key, label in self.metrics.items():
             label.setText("--")
-            label.setStyleSheet("font-weight: bold; padding: 2px;")
+            label.setStyleSheet(f"color: {text_color.name()}; font-weight: bold; padding: 2px;")
+        self.model_states = {
+            'model_a': {'value': None, 'status': 'default'},
+            'model_b': {'value': None, 'status': 'default'}
+        }
 
 class ResultImageView(QFrame):
     """顯示結果圖像（如差異圖、直方圖）的元件，支援縮放和平移"""
@@ -461,7 +511,6 @@ class ResultImageView(QFrame):
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(4)
         self.title_label = QLabel(f"<b>{title}</b>")
-        self.title_label.setStyleSheet("font-size: 12px;")
         self.title_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         title_layout.addWidget(self.title_label)
         self.reset_view_btn = QPushButton("重置縮放")
@@ -469,7 +518,6 @@ class ResultImageView(QFrame):
         self.reset_view_btn.clicked.connect(self.reset_view)
         self.reset_view_btn.setMaximumWidth(70)
         self.reset_view_btn.setMaximumHeight(24) 
-        self.reset_view_btn.setStyleSheet("font-size: 11px; padding: 2px;") 
         title_layout.addWidget(self.reset_view_btn)
         title_layout.addStretch()
         self.layout.addLayout(title_layout)
@@ -485,6 +533,22 @@ class ResultImageView(QFrame):
         self.layout.addWidget(self.view)
         self.pixmap_item = None
         self.original_pixmap = None
+        self.update_theme_colors()
+
+    def update_theme_colors(self):
+        """更新主題相關的顏色樣式"""
+        app = QApplication.instance()
+        palette = app.palette()
+        text_color = palette.color(palette.ColorRole.WindowText)
+        header_color = text_color.name()
+        current_text = self.title_label.text()
+        self.title_label.setStyleSheet(f"font-size: 14px; color: {header_color};")
+    
+    def changeEvent(self, event):
+        """處理變更事件，包括調色盤變更"""
+        if event.type() == event.Type.PaletteChange:
+            self.update_theme_colors()
+        super().changeEvent(event)
 
     def set_image(self, image, title=None):
         """設置要顯示的圖像
@@ -494,6 +558,7 @@ class ResultImageView(QFrame):
         """
         if title:
             self.title_label.setText(f"<b>{title}</b>")
+            self.update_theme_colors()
         if image is None:
             self.scene.clear()
             self.pixmap_item = None
@@ -551,6 +616,7 @@ class ResultImageView(QFrame):
         """清空圖像顯示"""
         self.scene.clear()
         self.title_label.setText(f"<b>結果圖像</b>")
+        self.update_theme_colors()
         self.pixmap_item = None
         self.original_pixmap = None
         self.view.setHasContent(False)
@@ -1057,6 +1123,19 @@ class AssessmentTab(QWidget):
             if self.edge_view.pixmap_item is not None:
                 self.edge_view.reset_view()
         QApplication.processEvents()
+    
+    def update_theme(self):
+        """更新主題相關的樣式"""
+        if hasattr(self, 'metric_display'):
+            self.metric_display.update_theme_colors()
+        if hasattr(self, 'diff_view'):
+            self.diff_view.update_theme_colors()
+        if hasattr(self, 'hist_view_a'):
+            self.hist_view_a.update_theme_colors()
+        if hasattr(self, 'hist_view_b'):
+            self.hist_view_b.update_theme_colors()
+        if hasattr(self, 'edge_view'):
+            self.edge_view.update_theme_colors()
         
     def closeEvent(self, event):
         """處理視窗關閉事件，確保清理線程"""

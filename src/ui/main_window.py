@@ -9,7 +9,7 @@ from pathlib import Path
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QTabWidget, QStatusBar,
                             QMenu, QMenuBar, QDialog, QMessageBox, QFileDialog, QInputDialog, QLabel, QApplication)
 from PyQt6.QtGui import QAction, QIcon, QPixmap
-from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal, QThread
+from PyQt6.QtCore import Qt, QUrl, QTimer, pyqtSignal, QThread, QSettings
 from PyQt6.QtGui import QDesktopServices
 
 from src.ui.image_tab import ImageProcessingTab
@@ -70,11 +70,12 @@ class VersionCheckThread(QThread):
 
 # --- 主應用程式類別 ---
 class ImageEnhancerApp(QMainWindow):
-    version = "1.3.0"
+    version = "1.3.1"
     def __init__(self):
         super().__init__()
         self.about_clicks = 0 
         self.version_check_thread = None
+        self.is_dark_theme = self.is_system_dark_theme()
         current_directory = Path(__file__).resolve().parent.parent.parent
         self.setWindowTitle("Nagato-Sakura-Image-Charm")
         self.setWindowIcon(QIcon(str(current_directory / "assets" / "icon" / f"{self.version}.ico")))
@@ -88,6 +89,7 @@ class ImageEnhancerApp(QMainWindow):
             self.statusBar.showMessage("警告：未偵測到ffmpeg，影片處理將不保留音軌")
         self.create_menu_bar()
         self.init_ui()
+        self.apply_theme()
         QTimer.singleShot(100, self.check_models_after_ui_shown)
 
     def check_models_after_ui_shown(self):
@@ -267,13 +269,62 @@ class ImageEnhancerApp(QMainWindow):
             logger.warning(f"ffmpeg檢查失敗: {str(e)}")
             return False
 
+    def is_system_dark_theme(self):
+        """檢查 Windows 系統是否使用深色主題"""
+        try:
+            settings = QSettings(
+                "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                QSettings.Format.NativeFormat
+            )
+            return settings.value("AppsUseLightTheme", 1) == 0
+        except Exception as e:
+            logger.warning(f"無法檢測系統主題設定: {str(e)}")
+            return False
+
+    def toggle_theme(self):
+        """切換淺色/深色主題"""
+        self.is_dark_theme = not self.is_dark_theme
+        self.apply_theme()
+        theme_name = "深色主題" if self.is_dark_theme else "淺色主題"
+        self.statusBar.showMessage(f"已切換到{theme_name}", 3000)
+        logger.info(f"主題已切換到: {theme_name}")
+
+    def apply_theme(self):
+        """套用主題"""
+        try:
+            app = QApplication.instance()
+            if hasattr(app.styleHints(), "setColorScheme"):
+                color_scheme = Qt.ColorScheme.Dark if self.is_dark_theme else Qt.ColorScheme.Light
+                app.styleHints().setColorScheme(color_scheme)
+                logger.info(f"使用 Qt 6.5+ 原生主題: {'深色' if self.is_dark_theme else '淺色'}")
+            else:
+                app.setPalette(app.style().standardPalette())
+                logger.info("使用系統預設調色盤")
+            self.notify_tabs_theme_changed()
+        except Exception as e:
+            logger.error(f"套用主題失敗: {str(e)}")
+            try:
+                app = QApplication.instance()
+                app.setPalette(app.style().standardPalette())
+                self.notify_tabs_theme_changed()
+            except Exception as fallback_error:
+                logger.error(f"回退到系統預設主題失敗: {str(fallback_error)}")
+    
+    def notify_tabs_theme_changed(self):
+        """通知所有標籤頁主題已變更"""
+        try:
+            if hasattr(self, 'assessment_tab') and hasattr(self.assessment_tab, 'update_theme'):
+                self.assessment_tab.update_theme()
+        except Exception as e:
+            logger.error(f"通知標籤頁更新主題時出錯: {str(e)}")
+
     def create_menu_bar(self):
         """創建選單列"""
         menu_bar = QMenuBar()
         self.setMenuBar(menu_bar)
         file_menu = QMenu("檔案", self)
         menu_bar.addMenu(file_menu)
-        icon_dir = Path(__file__).resolve().parent.parent.parent / "assets/icons"
+        icon_dir = Path(__file__).resolve().parent.parent.parent / "assets/icon"
         open_image_action = QAction(QIcon.fromTheme("document-open", QIcon(str(icon_dir / "image.png"))), "開啟圖片", self)
         open_image_action.setShortcut("Ctrl+O")
         open_image_action.triggered.connect(self.open_image)
@@ -321,6 +372,10 @@ class ImageEnhancerApp(QMainWindow):
         log_viewer_action.triggered.connect(self.open_log_viewer)
         log_viewer_action.setShortcut("Ctrl+L")
         tools_menu.addAction(log_viewer_action)
+        theme_action = QAction(QIcon.fromTheme("view-refresh", QIcon(str(icon_dir / "theme.png"))), "主題切換", self)
+        theme_action.setShortcut("Ctrl+T")
+        theme_action.triggered.connect(self.toggle_theme)
+        tools_menu.addAction(theme_action)
         help_menu = menu_bar.addMenu("說明")
         check_update_action = QAction(QIcon.fromTheme("system-software-update", QIcon(str(icon_dir / "update.png"))), "檢查更新", self)
         check_update_action.setShortcut("Ctrl+U")

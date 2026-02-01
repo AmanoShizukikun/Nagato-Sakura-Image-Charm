@@ -16,7 +16,7 @@ class LogViewerDialog(QDialog):
         self.setWindowTitle("日誌記錄監視器")
         try:
             current_directory = Path(__file__).resolve().parent.parent.parent
-            icon_path = current_directory / "assets" / "icon" / "1.3.0.ico"
+            icon_path = current_directory / "assets" / "icon" / "1.3.1.ico"
             if icon_path.exists():
                 self.setWindowIcon(QIcon(str(icon_path)))
             else:

@@ -21,7 +21,7 @@ import psutil
 import gc
 from skimage.metrics import structural_similarity as ssim
 
-# 使用統一的日誌系統
+
 logger = logging.getLogger(__name__)
 
 class FrameExtractor:

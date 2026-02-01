@@ -9,7 +9,7 @@ scikit-image
 matplotlib
 py-cpuinfo
 psutil
-pynvml
+nvidia-ml-py
 pandas
 Pillow
 numpy

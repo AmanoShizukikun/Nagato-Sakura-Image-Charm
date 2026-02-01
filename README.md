@@ -14,6 +14,20 @@
 1.2.1 版本後添加了對 Apple Metal Performance Shaders (MPS) 的支援，現在可以使用蘋果系統的圖形硬體加速。
 
 ## 近期變動
+### 1.3.1 (2026 年 2 月 1 日)
+![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.3.1.jpg)
+### 重要變更
+- 【重大】新增 [Nagato-Sakura-Image-Quality-Enhancer](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Enhancer) 倉庫 (簡化版本僅保留圖片處理功能並添加 Intel XPU 的支援)。
+### 新增功能
+- 【新增】主題切換功能，現在能在GUI內即時進行淺色模式及深色模式的切換。
+- 【更新】設備檢測功能，添加 Intel XPU 設備的檢測(NS-IC尚不支援 XPU 設備推理)。
+- 【更新】預覽框顯示，現在視窗畫面可以縮得更小。
+- 【更新】環境快速安裝檔，將 pynvml 更新為 nvidia-ml-py 。
+- 【修復】訓練頁面的色彩顯示，在淺色畫面也能正確顯示資訊。
+- 【修復】訓練頁面的部分意外錯誤問題。
+### 已知問題
+- 【錯誤】Linux、MacOS 同時存在兩張圖片執行完整圖片評估功能時會直接閃退的問題。
+
 ### 1.3.0 (2025 年 8 月 10 日)
 ![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.3.0.jpg)
 ### 重要變更
@@ -55,20 +69,6 @@
 - 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本後將強制預裝 Nagato-Sakura-Image-Classification (NS-C)模型推薦功能 (約16MB)。
 - 【錯誤】Linux、MacOS 同時存在兩張圖片執行完整圖片評估功能時會直接閃退的問題。
 - 【錯誤】MacOS、Linux 下載頁面文字重疊在預覽框上面。 
-
-### 1.2.0 (2025 年 5 月 20 日)
-![t2i](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/preview/1.2.0.jpg)
-### 重要變更
-- 【重大】正式將 Nagato-Sakura-Image-Classification (NS-C)圖像分類模型作為模型推薦外掛引入系統。
-- 【重大】更改了 Nagato-Sakura-Image-Classification (NS-C)的模型架構，從原本的 ResNet-19 改為更加輕量化的EfficientNet-B0。
-### 新增功能
-- 【新增】圖片處理頁面以及圖像評估頁面現在添加 NS-C 功能，可根據輸入圖像推薦最適合的的 NS-IQE 模型。
-- 【新增】Kairitsu 第九代泛用型寫實 JPEG 壓縮還原模型。
-### 已知問題
-- 【錯誤】超分辨率圖像預覽大小和原始圖像不同導致無法直觀比較。
-- 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本將強制預裝 Nagato-Sakura-Image-Quality-Assessment 影像評分功能 (約1MB)。
-- 【錯誤】擴充插件管理功能未完成，目前 1.2.0 版本將強制預裝 Nagato-Sakura-Image-Classification (NS-C)模型推薦功能 (約16MB)。
-
 
 [所有發行版本](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm/blob/main/assets/docs/Changelog.md)
 
@@ -178,6 +178,7 @@ python main.py
 - [Nagato-Sakura-Discord-Bot-py](https://github.com/AmanoShizukikun/Nagato-Sakura-Discord-Bot-py)
 - [Nagato-Sakura-Image-Charm-Trainer](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Charm-Trainer)
 - [Nagato-Sakura-Image-Quality-Assessment](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Assessment)
+- [Nagato-Sakura-Image-Quality-Enhancer](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Quality-Enhancer)
 - [Nagato-Sakura-Image-Classification](https://github.com/AmanoShizukikun/Nagato-Sakura-Image-Classification)
 - [Nagato-Sakura-Bounce-py](https://github.com/AmanoShizukikun/Nagato-Sakura-Bounce-py)
 

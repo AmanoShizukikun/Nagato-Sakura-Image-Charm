@@ -332,7 +332,7 @@ class NagatoSakuraBounceGame(QWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         try:
             current_directory = Path(__file__).resolve().parent.parent.parent
-            icon_path = current_directory / "assets" / "icon" / "1.3.0.ico"
+            icon_path = current_directory / "assets" / "icon" / "1.3.1.ico"
             if icon_path.exists():
                 self.setWindowIcon(QIcon(str(icon_path)))
             else:
@@ -1265,7 +1265,7 @@ class EasterEggDialog(QDialog):
         self.setFixedSize(WINDOW_WIDTH, WINDOW_HEIGHT)
         try:
             current_directory = Path(__file__).resolve().parent.parent.parent
-            icon_path = current_directory / "assets" / "icon" / "1.3.0.ico"
+            icon_path = current_directory / "assets" / "icon" / "1.3.1.ico"
             if icon_path.exists():
                 self.setWindowIcon(QIcon(str(icon_path)))
             else:
